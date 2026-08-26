@@ -49,6 +49,7 @@ class _VorxyHomeState extends State<VorxyHome> {
   final List<String> _sources = [
     'https://raw.githubusercontent.com/ebrasha/free-v2ray-public-list/main/V2Ray-Config-By-EbraSha.txt',
     'https://raw.githubusercontent.com/hiztin/VLESS-PO-GRIBI/main/combined.txt',
+    'https://raw.githubusercontent.com/LoneKingCode/free-proxy-db/main/proxies/ss.txt',
   ];
 
   final List<String> _fallbackServers = [
@@ -107,13 +108,13 @@ class _VorxyHomeState extends State<VorxyHome> {
       if (parsed != null) servers.add(parsed);
     }
 
-    final unique = <String, Map>{};
+    final unique = <String, Map<String, dynamic>>{};
     for (var s in servers) {
       unique[s['host']] = s;
     }
 
     setState(() {
-      _servers = unique.values.toList();
+      _servers = unique.values.cast<Map<String, dynamic>>().toList();
       if (_servers.isNotEmpty) _selectedIndex = 0;
       _isLoading = false;
     });
