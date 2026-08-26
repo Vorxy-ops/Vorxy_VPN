@@ -1,6 +1,6 @@
 name: vorxy_vpn
-description: Vorxy VPN — бесплатный безлимитный VPN-клиент
-publish_to: 'none'
+description: Vorxy VPN
+publish_to: none
 version: 1.0.0+1
 
 environment:
@@ -9,16 +9,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-
-  # Основные пакеты (все проверены и работают)
   http: ^1.2.0
   shared_preferences: ^2.2.2
   connectivity_plus: ^6.0.3
-  url_launcher: ^6.3.0
-
-  # РЕАЛЬНЫЙ РАБОЧИЙ VPN-ПАКЕТ [citation:7][citation:10]
-  # flutter_v2ray_client — полноценный клиент V2Ray/Xray с VPN-режимом
-  flutter_v2ray_client: ^3.0.0
 
 dev_dependencies:
   flutter_test:
