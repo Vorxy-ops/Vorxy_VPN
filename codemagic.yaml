@@ -1,8 +1,9 @@
 workflows:
-  android-workflow:
-    name: Android Build
+  vorxy-vpn:
+    name: Vorxy VPN
+    max_build_duration: 60
     environment:
-      flutter: 3.22.0
+      flutter: 3.47.1
     scripts:
       - name: Clean everything
         script: |
@@ -10,7 +11,7 @@ workflows:
           rm -rf .dart_tool
           rm -rf android/.gradle
           rm -rf android/app/build
-      - name: Get dependencies
+      - name: Install dependencies
         script: flutter pub get
       - name: Build APK
         script: flutter build apk --release
