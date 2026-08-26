@@ -112,7 +112,7 @@ class _VorxyHomeState extends State<VorxyHome> {
     try {
       final response = await http.get(
         Uri.parse('http://www.vpngate.net/api/iphone/')
-      ).timeout(Duration(seconds: 15));
+      ).timeout(Duration(seconds: 20));
 
       if (response.statusCode == 200) {
         final lines = response.body.split('\n');
@@ -122,36 +122,109 @@ class _VorxyHomeState extends State<VorxyHome> {
           if (parts.length < 15) continue;
           if (parts[0] == '*' || parts[0].isEmpty) continue;
           if (parts[1] == 'HostName' || parts[1].isEmpty) continue;
+          if (parts[14].trim().isEmpty) continue;
 
           try {
-            final configBase64 = parts[14].trim();
-            if (configBase64.isEmpty) continue;
-            final config = base64Decode(configBase64);
-            final configStr = utf8.decode(config);
+            String configStr = '';
+            if (parts[14].contains('_')) {
+              final configParts = parts[14].split('_');
+              if (configParts.length > 1) {
+                configStr = configParts[1];
+              } else {
+                configStr = parts[14];
+              }
+            } else {
+              configStr = parts[14];
+            }
 
-            servers.add({
-              'host': parts[1].trim(),
-              'country': parts[6].trim(),
-              'config': configStr,
-              'remark': parts[6].trim(),
-              'score': int.tryParse(parts[2] ?? '0') ?? 0,
-            });
+            if (configStr.isNotEmpty) {
+              configStr = configStr.replaceAll('\\r\\n', '\n').replaceAll('\\n', '\n').replaceAll('"', '');
+              if (configStr.contains('client') && configStr.contains('dev tun')) {
+                servers.add({
+                  'host': parts[1].trim(),
+                  'country': parts[6].trim(),
+                  'config': configStr,
+                  'remark': parts[6].trim(),
+                  'score': int.tryParse(parts[2] ?? '0') ?? 0,
+                });
+              }
+            }
           } catch (_) {}
         }
-        servers.shuffle();
       }
-    } catch (_) {}
+    } catch (e) {
+      print('Error fetching servers: $e');
+    }
+
+    servers.shuffle();
 
     if (servers.isEmpty) {
       servers = [
-        {'host': '185.162.235.223', 'country': 'DE', 'config': '', 'remark': 'Germany', 'score': 100},
-        {'host': '142.0.136.137', 'country': 'US', 'config': '', 'remark': 'USA', 'score': 95},
-        {'host': '103.152.112.157', 'country': 'JP', 'config': '', 'remark': 'Japan', 'score': 90},
+        {
+          'host': '185.162.235.223',
+          'country': 'DE',
+          'config': '''client
+dev tun
+proto tcp
+remote 185.162.235.223 443
+resolv-retry infinite
+nobind
+persist-key
+persist-tun
+remote-cert-tls server
+auth SHA256
+cipher AES-256-GCM
+ignore-unknown-option block-outside-dns
+verb 3
+''',
+          'remark': 'Germany',
+          'score': 100,
+        },
+        {
+          'host': '142.0.136.137',
+          'country': 'US',
+          'config': '''client
+dev tun
+proto tcp
+remote 142.0.136.137 80
+resolv-retry infinite
+nobind
+persist-key
+persist-tun
+remote-cert-tls server
+auth SHA256
+cipher AES-256-GCM
+ignore-unknown-option block-outside-dns
+verb 3
+''',
+          'remark': 'USA',
+          'score': 95,
+        },
+        {
+          'host': '103.152.112.157',
+          'country': 'JP',
+          'config': '''client
+dev tun
+proto tcp
+remote 103.152.112.157 443
+resolv-retry infinite
+nobind
+persist-key
+persist-tun
+remote-cert-tls server
+auth SHA256
+cipher AES-256-GCM
+ignore-unknown-option block-outside-dns
+verb 3
+''',
+          'remark': 'Japan',
+          'score': 90,
+        },
       ];
     }
 
     setState(() {
-      _servers = servers.take(50).toList();
+      _servers = servers.length > 50 ? servers.sublist(0, 50) : servers;
       if (_servers.isNotEmpty) _selectedIndex = 0;
       _isLoadingServers = false;
     });
@@ -165,8 +238,8 @@ class _VorxyHomeState extends State<VorxyHome> {
     }
 
     final server = _servers[index];
-    if (server['config'].isEmpty) {
-      _showSnackbar('This server has no config');
+    if (server['config'] == null || server['config'].toString().isEmpty) {
+      _showSnackbar('No config for this server');
       return;
     }
 
@@ -177,7 +250,7 @@ class _VorxyHomeState extends State<VorxyHome> {
     });
 
     try {
-      await _openVpn.connect(server['config'], server['remark']);
+      await _openVpn.connect(server['config'].toString(), server['remark']);
       setState(() {
         _isConnected = true;
         _isLoading = false;
@@ -191,7 +264,7 @@ class _VorxyHomeState extends State<VorxyHome> {
         _isLoading = false;
         _statusText = 'Connection failed';
       });
-      _showSnackbar('Failed to connect');
+      _showSnackbar('Failed: ${e.toString().substring(0, 30)}');
     }
   }
 
@@ -309,49 +382,84 @@ class _VorxyHomeState extends State<VorxyHome> {
               SizedBox(height: 12),
               Expanded(
                 child: _isLoadingServers
-                  ? Center(child: CircularProgressIndicator(color: Color(0xFF2563EB)))
-                  : ListView.builder(
-                      itemCount: _servers.length,
-                      itemBuilder: (ctx, idx) {
-                        final server = _servers[idx];
-                        final isSelected = idx == _selectedIndex;
-                        return GestureDetector(
-                          onTap: () { if (!_isConnected) setState(() => _selectedIndex = idx); },
-                          child: Container(
-                            margin: EdgeInsets.only(bottom: 6),
-                            padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                            decoration: BoxDecoration(
-                              color: isSelected ? Color(0xFF1E293B) : Color(0xFF0F172A),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: isSelected ? Color(0xFF2563EB) : Color(0xFF1E293B), width: isSelected ? 2 : 1),
-                            ),
-                            child: Row(
-                              children: [
-                                Text(_getFlag(server['country'] ?? ''), style: TextStyle(fontSize: 22)),
-                                SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(server['remark'] ?? 'Server', style: TextStyle(fontWeight: FontWeight.w500)),
-                                      Text(server['host'] ?? '', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
-                                    ],
+                  ? Center(child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        CircularProgressIndicator(color: Color(0xFF2563EB)),
+                        SizedBox(height: 12),
+                        Text('Loading servers...', style: TextStyle(color: Color(0xFF94A3B8))),
+                      ],
+                    ))
+                  : _servers.isEmpty
+                      ? Center(child: Text('No servers available', style: TextStyle(color: Color(0xFF94A3B8))))
+                      : ListView.builder(
+                          itemCount: _servers.length,
+                          itemBuilder: (ctx, idx) {
+                            final server = _servers[idx];
+                            final isSelected = idx == _selectedIndex;
+                            final hasConfig = server['config'] != null && server['config'].toString().isNotEmpty;
+                            return GestureDetector(
+                              onTap: () { if (!_isConnected) setState(() => _selectedIndex = idx); },
+                              child: Container(
+                                margin: EdgeInsets.only(bottom: 6),
+                                padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                decoration: BoxDecoration(
+                                  color: isSelected ? Color(0xFF1E293B) : Color(0xFF0F172A),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: isSelected ? Color(0xFF2563EB) : (hasConfig ? Color(0xFF1E293B) : Color(0xFF4A1A1A)),
+                                    width: isSelected ? 2 : 1,
                                   ),
                                 ),
-                                Container(
-                                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: isSelected ? Color(0xFF2563EB) : Color(0xFF1E293B),
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: Text('${server['score'] ?? 0}', style: TextStyle(fontSize: 10, color: Colors.white)),
+                                child: Row(
+                                  children: [
+                                    Text(_getFlag(server['country'] ?? ''), style: TextStyle(fontSize: 22)),
+                                    SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            server['remark'] ?? 'Server',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w500,
+                                              color: hasConfig ? Colors.white : Color(0xFF64748B),
+                                            ),
+                                          ),
+                                          Text(
+                                            server['host'] ?? '',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: hasConfig ? Color(0xFF94A3B8) : Color(0xFF4A4A4A),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    if (!hasConfig)
+                                      Container(
+                                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: Color(0xFF4A1A1A),
+                                          borderRadius: BorderRadius.circular(10),
+                                        ),
+                                        child: Text('No config', style: TextStyle(fontSize: 9, color: Color(0xFFEF4444))),
+                                      ),
+                                    if (hasConfig)
+                                      Container(
+                                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: isSelected ? Color(0xFF2563EB) : Color(0xFF1E293B),
+                                          borderRadius: BorderRadius.circular(10),
+                                        ),
+                                        child: Text('${server['score'] ?? 0}', style: TextStyle(fontSize: 10, color: Colors.white)),
+                                      ),
+                                  ],
                                 ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
+                              ),
+                            );
+                          },
+                        ),
               ),
               SizedBox(height: 8),
               SizedBox(
