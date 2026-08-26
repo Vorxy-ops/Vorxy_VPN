@@ -37,6 +37,7 @@ class _VorxyHomeState extends State<VorxyHome> {
   final OpenVPN _openVpn = OpenVPN();
   bool _isConnected = false;
   bool _isLoading = false;
+  bool _isLoadingServers = false;
   String _statusText = 'Disconnected';
   String _selectedServer = 'Auto';
   String _connectionTime = '00:00:00';
@@ -62,11 +63,15 @@ class _VorxyHomeState extends State<VorxyHome> {
   }
 
   Future<void> _initVpn() async {
-    await _openVpn.initialize(
-      groupIdentifier: 'group.com.vorxy.vpn',
-      providerBundleIdentifier: 'com.vorxy.app.VPNExtension',
-      localizedDescription: 'Vorxy VPN',
-    );
+    try {
+      await _openVpn.initialize(
+        groupIdentifier: 'group.com.vorxy.vpn',
+        providerBundleIdentifier: 'com.vorxy.app.VPNExtension',
+        localizedDescription: 'Vorxy VPN',
+      );
+    } catch (e) {
+      print('Init error: $e');
+    }
   }
 
   Future<void> _checkConnectivity() async {
@@ -79,47 +84,84 @@ class _VorxyHomeState extends State<VorxyHome> {
   }
 
   Future<void> _fetchServers() async {
-    setState(() => _isLoading = true);
+    setState(() => _isLoadingServers = true);
     List<Map<String, dynamic>> servers = [];
 
     try {
       final response = await http.get(
         Uri.parse('http://www.vpngate.net/api/iphone/')
-      ).timeout(Duration(seconds: 8));
+      ).timeout(Duration(seconds: 15));
+
       if (response.statusCode == 200) {
         final lines = response.body.split('\n');
+        int count = 0;
+
         for (var line in lines) {
-          if (line.contains('OpenVPN')) {
-            final parts = line.split(',');
-            if (parts.length > 14) {
-              servers.add({
-                'host': parts[1],
-                'country': parts[6],
-                'config': base64Decode(parts[14]),
-                'remark': '${parts[6]} ${parts[1]}',
-              });
-            }
+          if (line.trim().isEmpty) continue;
+
+          final parts = line.split(',');
+          if (parts.length < 15) continue;
+
+          // Проверяем, что это OpenVPN сервер
+          if (parts[0] == '*' || parts[0].isEmpty) continue;
+          if (parts[1] == 'HostName' || parts[1].isEmpty) continue;
+
+          try {
+            final configBase64 = parts[14].trim();
+            if (configBase64.isEmpty) continue;
+
+            final config = base64Decode(configBase64);
+            final configStr = utf8.decode(config);
+
+            servers.add({
+              'host': parts[1].trim(),
+              'country': parts[6].trim(),
+              'config': configStr,
+              'remark': '${parts[6].trim()} ${parts[1].trim()}',
+              'score': int.tryParse(parts[2] ?? '0') ?? 0,
+            });
+            count++;
+          } catch (e) {
+            continue;
           }
         }
-      }
-    } catch (_) {}
 
+        // Сортируем по рейтингу (чем выше, тем лучше)
+        servers.sort((a, b) => (b['score'] ?? 0).compareTo(a['score'] ?? 0));
+
+        print('✅ Found ${servers.length} OpenVPN servers');
+      }
+    } catch (e) {
+      print('Error fetching servers: $e');
+    }
+
+    // Если серверов нет, добавляем запасные
     if (servers.isEmpty) {
       servers = [
         {
           'host': '185.162.235.223',
           'country': 'DE',
           'config': '',
-          'remark': 'Fallback Server',
-        }
+          'remark': 'Fallback Server 1',
+          'score': 0,
+        },
+        {
+          'host': '142.0.136.137',
+          'country': 'US',
+          'config': '',
+          'remark': 'Fallback Server 2',
+          'score': 0,
+        },
       ];
     }
 
     setState(() {
       _servers = servers;
       if (_servers.isNotEmpty) _selectedIndex = 0;
-      _isLoading = false;
+      _isLoadingServers = false;
     });
+
+    _showSnackbar('Loaded ${_servers.length} servers');
   }
 
   Future<void> _connectVpn(int index) async {
@@ -150,7 +192,7 @@ class _VorxyHomeState extends State<VorxyHome> {
         _isLoading = false;
         _statusText = 'Error: ${e.toString().substring(0, 30)}';
       });
-      _showSnackbar('Connection failed');
+      _showSnackbar('Connection failed: ${e.toString().substring(0, 50)}');
     }
   }
 
@@ -266,35 +308,68 @@ class _VorxyHomeState extends State<VorxyHome> {
                 ),
               ),
               SizedBox(height: 16),
-              Container(
-                height: 100,
-                child: _isLoading
-                  ? Center(child: CircularProgressIndicator(color: Color(0xFF2563EB)))
+              Expanded(
+                child: _isLoadingServers
+                  ? Center(child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        CircularProgressIndicator(color: Color(0xFF2563EB)),
+                        SizedBox(height: 16),
+                        Text('Loading servers...', style: TextStyle(color: Color(0xFF94A3B8))),
+                      ],
+                    ))
                   : ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _servers.length > 20 ? 20 : _servers.length,
+                      itemCount: _servers.length,
                       itemBuilder: (ctx, idx) {
                         final server = _servers[idx];
                         final isSelected = idx == _selectedIndex;
                         return GestureDetector(
                           onTap: () { if (!_isConnected) setState(() => _selectedIndex = idx); },
                           child: Container(
-                            width: 110,
-                            margin: EdgeInsets.only(right: 10),
-                            padding: EdgeInsets.all(12),
+                            margin: EdgeInsets.only(bottom: 8),
+                            padding: EdgeInsets.all(16),
                             decoration: BoxDecoration(
                               color: isSelected ? Color(0xFF1E293B) : Color(0xFF0F172A),
                               borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: isSelected ? Color(0xFF2563EB) : Color(0xFF1E293B), width: isSelected ? 2 : 1),
+                              border: Border.all(
+                                color: isSelected ? Color(0xFF2563EB) : Color(0xFF1E293B),
+                                width: isSelected ? 2 : 1,
+                              ),
                             ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisAlignment: MainAxisAlignment.center,
+                            child: Row(
                               children: [
-                                Text('VPN', style: TextStyle(fontSize: 10, color: Color(0xFF2563EB), fontWeight: FontWeight.w600)),
-                                SizedBox(height: 2),
-                                Text(server['remark'] ?? 'Server', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500), maxLines: 1, overflow: TextOverflow.ellipsis),
-                                Text(server['host'] ?? '', style: TextStyle(fontSize: 9, color: Color(0xFF94A3B8)), maxLines: 1, overflow: TextOverflow.ellipsis),
+                                Icon(
+                                  Icons.public,
+                                  color: isSelected ? Color(0xFF2563EB) : Color(0xFF64748B),
+                                  size: 20,
+                                ),
+                                SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        server['remark'] ?? 'Server',
+                                        style: TextStyle(fontWeight: FontWeight.w500),
+                                      ),
+                                      Text(
+                                        server['host'] ?? '',
+                                        style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Container(
+                                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: isSelected ? Color(0xFF2563EB) : Color(0xFF1E293B),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    '${server['score'] ?? 0}',
+                                    style: TextStyle(fontSize: 10, color: Colors.white),
+                                  ),
+                                ),
                               ],
                             ),
                           ),
