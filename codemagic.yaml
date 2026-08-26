@@ -3,9 +3,7 @@ workflows:
     name: Vorxy VPN
     max_build_duration: 60
     environment:
-      flutter: 3.22.0
-      variables:
-        JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+      flutter: 3.22.3
     scripts:
       - name: Create MainActivity
         script: |
@@ -15,26 +13,15 @@ workflows:
           import io.flutter.embedding.android.FlutterActivity
           class MainActivity: FlutterActivity()
           EOF
-      - name: Clean everything
+      - name: Clean build
         script: |
           rm -rf build
           rm -rf .dart_tool
           rm -rf android/.gradle
           rm -rf android/app/build
       - name: Install dependencies
-        script: |
-          flutter clean
-          flutter pub get
+        script: flutter pub get
       - name: Build APK
-        script: |
-          cd android
-          chmod +x gradlew
-          ./gradlew clean
-          cd ..
-          flutter build apk --release --no-pub
+        script: flutter build apk --release
     artifacts:
       - build/app/outputs/flutter-apk/app-release.apk
-    publishing:
-      email:
-        recipients:
-          - your-email@example.com
