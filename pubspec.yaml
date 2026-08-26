@@ -9,12 +9,11 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_v2ray: ^1.4.2
   http: ^1.2.0
   shared_preferences: ^2.2.2
   connectivity_plus: ^6.0.3
-  flutter_native_splash: ^2.4.0
   url_launcher: ^6.3.0
+  v2ray_flutter: ^1.1.0
 
 dev_dependencies:
   flutter_test:
