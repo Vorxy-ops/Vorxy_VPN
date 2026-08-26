@@ -3,14 +3,16 @@ workflows:
     name: Vorxy VPN
     max_build_duration: 60
     environment:
-      flutter: 3.22.0
+      flutter: 3.47.1
     scripts:
-      - name: Create missing files
+      - name: Create MainActivity
         script: |
           mkdir -p android/app/src/main/kotlin/com/vorxy/vpn
-          echo "package com.vorxy.vpn" > android/app/src/main/kotlin/com/vorxy/vpn/MainActivity.kt
-          echo "import io.flutter.embedding.android.FlutterActivity" >> android/app/src/main/kotlin/com/vorxy/vpn/MainActivity.kt
-          echo "class MainActivity: FlutterActivity()" >> android/app/src/main/kotlin/com/vorxy/vpn/MainActivity.kt
+          cat > android/app/src/main/kotlin/com/vorxy/vpn/MainActivity.kt << 'EOF'
+          package com.vorxy.vpn
+          import io.flutter.embedding.android.FlutterActivity
+          class MainActivity: FlutterActivity()
+          EOF
       - name: Clean build
         script: |
           rm -rf build
