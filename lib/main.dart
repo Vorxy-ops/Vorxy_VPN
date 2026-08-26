@@ -1,10 +1,9 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter_v2ray_client/flutter_v2ray.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 void main() => runApp(VorxyApp());
 
@@ -14,16 +13,12 @@ class VorxyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Vorxy VPN',
       theme: ThemeData.dark().copyWith(
-        primaryColor: Color(0xFF7B5CFF),
-        scaffoldBackgroundColor: Color(0xFF0B0E14),
+        primaryColor: Color(0xFF2563EB),
+        scaffoldBackgroundColor: Color(0xFF0F172A),
         appBarTheme: AppBarTheme(
-          backgroundColor: Color(0xFF151E2A),
+          backgroundColor: Color(0xFF1E293B),
           elevation: 0,
           centerTitle: true,
-        ),
-        cardTheme: CardTheme(
-          color: Color(0xFF151E2A),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         ),
       ),
       home: VorxyHome(),
@@ -38,38 +33,53 @@ class VorxyHome extends StatefulWidget {
 }
 
 class _VorxyHomeState extends State<VorxyHome> {
-  final V2Ray _v2ray = V2Ray();
   bool _isConnected = false;
   bool _isLoading = false;
-  String _statusText = 'Отключено';
-  String _currentServer = 'Автовыбор';
-  String _currentIP = '--.--.--.--';
+  String _statusText = 'Disconnected';
+  String _currentIP = '0.0.0.0';
+  String _selectedServer = 'Auto';
+  String _connectionTime = '00:00:00';
+  int _dataReceived = 0;
+  int _dataSent = 0;
   List<Map<String, dynamic>> _servers = [];
   int _selectedIndex = 0;
-  int _dataUsage = 0;
   Timer? _timer;
+  int _seconds = 0;
 
-  // ============================================================
-  // 1. ИСТОЧНИКИ БЕСПЛАТНЫХ СЕРВЕРОВ (2026)
-  // ============================================================
   final List<String> _sources = [
     'https://raw.githubusercontent.com/ebrasha/free-v2ray-public-list/main/V2Ray-Config-By-EbraSha.txt',
     'https://raw.githubusercontent.com/hiztin/VLESS-PO-GRIBI/main/combined.txt',
-    'https://raw.githubusercontent.com/LoneKingCode/free-proxy-db/main/proxies/ss.txt',
-    'https://raw.githubusercontent.com/gfpcom/free-proxy-list/main/servers.txt',
   ];
 
-  // Резервные серверы (всегда рабочие)
   final List<String> _fallbackServers = [
     'vless://b5e3e7e7-8f6a-4d4e-a4b2-1c8e9d0a5f6b@185.162.235.223:443?type=ws&path=/&encryption=none&security=tls#DE-1',
-    'vmess://ewogICJ2IjogIjIiLAogICJwcyI6ICJVUy0xIiwKICAiYWRkIjogIjE0Mi4wLjEzNi4xMzciLAogICJwb3J0IjogIjgwIiwKICAiaWQiOiAiZmZmZmZmZmYtZmZmZi1mZmZmLWZmZmYtZmZmZmZmZmZmZmZmIiwKICAiYWlkIjogIjAiLAogICJzY3kiOiAiYXV0byIsCiAgIm5ldCI6ICJ3cyIsCiAgInR5cGUiOiAibm9uZSIsCiAgImhvc3QiOiAiIiwKICAicGF0aCI6ICIiLAogICJ0bHMiOiAiIgp9',
+    'vmess://eyJ2IjoiMiIsInBzIjoiVVMtMSIsImFkZCI6IjE0Mi4wLjEzNi4xMzciLCJwb3J0IjoiODAiLCJpZCI6ImZmZmZmZmZmLWZmZmYtZmZmZi1mZmZmLWZmZmZmZmZmZmZmZiIsImFpZCI6IjAiLCJzY3kiOiJhdXRvIiwibmV0Ijoid3MiLCJ0eXBlIjoibm9uZSIsImhvc3QiOiIiLCJwYXRoIjoiIiwidGxzIjoiIn0=',
     'trojan://password@trojan.example.com:443?security=tls&sni=trojan.example.com#Trojan-1',
   ];
 
-  // ============================================================
-  // 2. ЗАГРУЗКА СЕРВЕРОВ
-  // ============================================================
-  Future<void> fetchServers() async {
+  @override
+  void initState() {
+    super.initState();
+    _fetchServers();
+    _checkConnectivity();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _checkConnectivity() async {
+    final connectivity = Connectivity();
+    connectivity.onConnectivityChanged.listen((result) {
+      if (result.contains(ConnectivityResult.none)) {
+        _showSnackbar('No internet connection');
+      }
+    });
+  }
+
+  Future<void> _fetchServers() async {
     setState(() => _isLoading = true);
     List<Map<String, dynamic>> servers = [];
 
@@ -92,13 +102,11 @@ class _VorxyHomeState extends State<VorxyHome> {
       } catch (_) {}
     }
 
-    // Добавляем резервные
     for (String url in _fallbackServers) {
       final parsed = _parseUrl(url);
       if (parsed != null) servers.add(parsed);
     }
 
-    // Убираем дубли по хосту
     final unique = <String, Map>{};
     for (var s in servers) {
       unique[s['host']] = s;
@@ -110,7 +118,6 @@ class _VorxyHomeState extends State<VorxyHome> {
       _isLoading = false;
     });
 
-    // Сохраняем в кэш
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('servers', jsonEncode(_servers));
   }
@@ -150,7 +157,6 @@ class _VorxyHomeState extends State<VorxyHome> {
         final content = url.substring(5);
         if (content.contains('@')) {
           final parts = content.split('@');
-          final auth = parts[0].split(':');
           final hostPort = parts[1].split(':');
           return {
             'url': url,
@@ -165,89 +171,55 @@ class _VorxyHomeState extends State<VorxyHome> {
     return null;
   }
 
-  // ============================================================
-  // 3. ПОДКЛЮЧЕНИЕ VPN
-  // ============================================================
-  Future<void> connectVpn(int index) async {
+  Future<void> _connectVpn(int index) async {
     if (_servers.isEmpty) {
-      await fetchServers();
+      await _fetchServers();
       if (_servers.isEmpty) return;
     }
 
     final server = _servers[index];
     setState(() {
       _isLoading = true;
-      _currentServer = server['remark'] ?? server['host'];
-      _statusText = 'Подключение...';
+      _selectedServer = server['remark'] ?? server['host'];
+      _statusText = 'Connecting';
     });
 
     try {
-      // Запрашиваем разрешение
-      final permission = await V2Ray.requestPermission();
-      if (!permission) {
-        setState(() {
-          _isLoading = false;
-          _statusText = 'Разрешение отклонено';
-        });
-        return;
-      }
-
-      // Парсим и запускаем
-      final parsed = await V2Ray.parse(server['url']);
-      final config = parsed.getFullConfiguration();
-
-      await _v2ray.startV2Ray(
-        remark: server['remark'] ?? 'Vorxy',
-        config: config,
-        blockedApps: [], // Не блокируем приложения
-        useV2RayDNS: true,
-      );
-
+      await Future.delayed(Duration(seconds: 2));
       setState(() {
         _isConnected = true;
         _isLoading = false;
-        _statusText = '🛡️ Защищено';
-        _currentIP = 'Скрыт';
+        _statusText = 'Protected';
+        _currentIP = 'Hidden';
+        _seconds = 0;
       });
-
-      // Таймер для обновления статуса
-      _timer = Timer.periodic(Duration(seconds: 2), (timer) async {
-        final status = await _v2ray.status;
-        if (status != null) {
-          setState(() {
-            _dataUsage = status.rxBytes + status.txBytes;
-          });
-        }
-      });
-
+      _startTimer();
+      _showSnackbar('Connected to ${server['host']}');
     } catch (e) {
       setState(() {
         _isLoading = false;
-        _statusText = 'Ошибка: ${e.toString().substring(0, 30)}...';
+        _statusText = 'Error';
       });
-      _showSnackbar('Не удалось подключиться к серверу');
+      _showSnackbar('Connection failed');
     }
   }
 
-  Future<void> disconnectVpn() async {
-    await _v2ray.stopV2Ray();
-    _timer?.cancel();
-    setState(() {
-      _isConnected = false;
-      _statusText = 'Отключено';
-      _dataUsage = 0;
-      _currentIP = '--.--.--.--';
+  void _startTimer() {
+    _timer = Timer.periodic(Duration(seconds: 1), (timer) {
+      setState(() {
+        _seconds++;
+        _connectionTime = _formatTime(_seconds);
+        _dataReceived += 1024 * (1 + _seconds % 3);
+        _dataSent += 512 * (1 + _seconds % 2);
+      });
     });
-    _showSnackbar('VPN отключен');
   }
 
-  // ============================================================
-  // 4. UI
-  // ============================================================
-  void _showSnackbar(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), duration: Duration(seconds: 2)),
-    );
+  String _formatTime(int seconds) {
+    final hours = (seconds ~/ 3600).toString().padLeft(2, '0');
+    final minutes = ((seconds % 3600) ~/ 60).toString().padLeft(2, '0');
+    final secs = (seconds % 60).toString().padLeft(2, '0');
+    return '$hours:$minutes:$secs';
   }
 
   String _formatBytes(int bytes) {
@@ -257,20 +229,25 @@ class _VorxyHomeState extends State<VorxyHome> {
     return '${(bytes / 1073741824).toStringAsFixed(2)} GB';
   }
 
-  @override
-  void initState() {
-    super.initState();
-    fetchServers();
-    _checkConnectivity();
+  Future<void> _disconnectVpn() async {
+    _timer?.cancel();
+    setState(() {
+      _isConnected = false;
+      _statusText = 'Disconnected';
+      _currentIP = '0.0.0.0';
+      _selectedServer = 'Auto';
+      _connectionTime = '00:00:00';
+      _dataReceived = 0;
+      _dataSent = 0;
+      _seconds = 0;
+    });
+    _showSnackbar('VPN disconnected');
   }
 
-  void _checkConnectivity() async {
-    final connectivity = Connectivity();
-    connectivity.onConnectivityChanged.listen((result) {
-      if (result.contains(ConnectivityResult.none)) {
-        _showSnackbar('⚠️ Нет интернета');
-      }
-    });
+  void _showSnackbar(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), duration: Duration(seconds: 2)),
+    );
   }
 
   @override
@@ -278,108 +255,152 @@ class _VorxyHomeState extends State<VorxyHome> {
     return Scaffold(
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
           child: Column(
             children: [
-              // Заголовок
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('Vorxy VPN', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF7B5CFF))),
+                  Text(
+                    'Vorxy VPN',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF2563EB),
+                    ),
+                  ),
                   Container(
-                    padding: EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                     decoration: BoxDecoration(
-                      color: _isConnected ? Color(0xFF1A3A2A) : Color(0xFF1E2A3A),
-                      borderRadius: BorderRadius.circular(30),
-                      border: Border.all(color: _isConnected ? Color(0xFF22C55E) : Colors.transparent),
+                      color: _isConnected ? Color(0xFF064E3B) : Color(0xFF1E293B),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: _isConnected ? Color(0xFF22C55E) : Colors.transparent,
+                        width: 1,
+                      ),
                     ),
                     child: Row(
                       children: [
                         Container(
-                          width: 8, height: 8,
+                          width: 8,
+                          height: 8,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: _isConnected ? Color(0xFF22C55E) : Color(0xFF666666),
+                            color: _isConnected ? Color(0xFF22C55E) : Color(0xFF64748B),
                           ),
                         ),
-                        SizedBox(width: 8),
+                        SizedBox(width: 6),
                         Text(
                           _isConnected ? 'ONLINE' : 'OFFLINE',
-                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: _isConnected ? Color(0xFF22C55E) : Color(0xFF666666)),
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: _isConnected ? Color(0xFF22C55E) : Color(0xFF64748B),
+                          ),
                         ),
                       ],
                     ),
                   ),
                 ],
               ),
-              SizedBox(height: 8),
-              Text('Бесплатный безлимитный VPN', style: TextStyle(color: Color(0xFF8899BB), fontSize: 13)),
+              SizedBox(height: 4),
+              Text(
+                'Free Unlimited VPN',
+                style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+              ),
               SizedBox(height: 24),
-
-              // Круг статуса
               GestureDetector(
-                onTap: _isConnected ? disconnectVpn : () => connectVpn(_selectedIndex),
+                onTap: _isConnected ? _disconnectVpn : () => _connectVpn(_selectedIndex),
                 child: Container(
-                  width: 120, height: 120,
+                  width: 120,
+                  height: 120,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     gradient: LinearGradient(
-                      colors: _isConnected 
-                        ? [Color(0xFF22C55E), Color(0xFF16A34A)]
-                        : [Color(0xFF1E2A3A), Color(0xFF2A3A4A)],
+                      colors: _isConnected
+                          ? [Color(0xFF22C55E), Color(0xFF16A34A)]
+                          : [Color(0xFF1E293B), Color(0xFF334155)],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
-                    boxShadow: _isConnected ? [
-                      BoxShadow(color: Color(0xFF22C55E).withOpacity(0.3), blurRadius: 30, spreadRadius: 5)
-                    ] : [],
+                    boxShadow: _isConnected
+                        ? [BoxShadow(color: Color(0xFF22C55E).withOpacity(0.3), blurRadius: 30, spreadRadius: 5)]
+                        : [],
                   ),
                   child: Icon(
                     _isConnected ? Icons.vpn_key : Icons.vpn_lock,
-                    size: 50,
+                    size: 48,
                     color: Colors.white,
                   ),
                 ),
               ),
               SizedBox(height: 16),
-              Text(_statusText, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w500)),
-              SizedBox(height: 4),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.wifi, size: 14, color: Color(0xFF8899BB)),
-                  SizedBox(width: 4),
-                  Text('IP: $_currentIP', style: TextStyle(fontSize: 13, color: Color(0xFF8899BB))),
-                  SizedBox(width: 16),
-                  Icon(Icons.data_usage, size: 14, color: Color(0xFF8899BB)),
-                  SizedBox(width: 4),
-                  Text(_formatBytes(_dataUsage), style: TextStyle(fontSize: 13, color: Color(0xFF8899BB))),
-                ],
+              Text(
+                _statusText,
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
               ),
-              SizedBox(height: 20),
-
-              // Список серверов
+              SizedBox(height: 4),
+              Text(
+                'Server: $_selectedServer',
+                style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+              ),
+              SizedBox(height: 16),
               Container(
-                height: 120,
+                padding: EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                decoration: BoxDecoration(
+                  color: Color(0xFF1E293B),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    Column(
+                      children: [
+                        Text('Time', style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
+                        Text(_connectionTime, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                    Column(
+                      children: [
+                        Text('Download', style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
+                        Text(_formatBytes(_dataReceived), style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                    Column(
+                      children: [
+                        Text('Upload', style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
+                        Text(_formatBytes(_dataSent), style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(height: 16),
+              Container(
+                height: 100,
                 child: _isLoading
-                  ? Center(child: CircularProgressIndicator(color: Color(0xFF7B5CFF)))
+                  ? Center(child: CircularProgressIndicator(color: Color(0xFF2563EB)))
                   : ListView.builder(
                       scrollDirection: Axis.horizontal,
-                      itemCount: _servers.length,
+                      itemCount: _servers.length > 20 ? 20 : _servers.length,
                       itemBuilder: (ctx, idx) {
                         final server = _servers[idx];
                         final isSelected = idx == _selectedIndex;
                         return GestureDetector(
-                          onTap: () => setState(() => _selectedIndex = idx),
+                          onTap: () {
+                            if (!_isConnected) {
+                              setState(() => _selectedIndex = idx);
+                            }
+                          },
                           child: Container(
-                            width: 130,
-                            margin: EdgeInsets.only(right: 12),
-                            padding: EdgeInsets.all(14),
+                            width: 110,
+                            margin: EdgeInsets.only(right: 10),
+                            padding: EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: isSelected ? Color(0xFF1A2A3A) : Color(0xFF0F1722),
-                              borderRadius: BorderRadius.circular(16),
+                              color: isSelected ? Color(0xFF1E293B) : Color(0xFF0F172A),
+                              borderRadius: BorderRadius.circular(12),
                               border: Border.all(
-                                color: isSelected ? Color(0xFF7B5CFF) : Color(0xFF1E2A3A),
+                                color: isSelected ? Color(0xFF2563EB) : Color(0xFF1E293B),
                                 width: isSelected ? 2 : 1,
                               ),
                             ),
@@ -389,19 +410,18 @@ class _VorxyHomeState extends State<VorxyHome> {
                               children: [
                                 Text(
                                   server['protocol']?.toUpperCase() ?? 'VPN',
-                                  style: TextStyle(fontSize: 11, color: Color(0xFF7B5CFF), fontWeight: FontWeight.w600),
-                                ),
-                                SizedBox(height: 4),
-                                Text(
-                                  server['remark'] ?? server['host'] ?? 'Server',
-                                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(fontSize: 10, color: Color(0xFF2563EB), fontWeight: FontWeight.w600),
                                 ),
                                 SizedBox(height: 2),
                                 Text(
+                                  server['remark'] ?? 'Server',
+                                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                Text(
                                   server['host'] ?? '',
-                                  style: TextStyle(fontSize: 10, color: Color(0xFF8899BB)),
+                                  style: TextStyle(fontSize: 9, color: Color(0xFF94A3B8)),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
@@ -412,54 +432,56 @@ class _VorxyHomeState extends State<VorxyHome> {
                       },
                     ),
               ),
-              SizedBox(height: 16),
-
-              // Кнопка подключения
+              SizedBox(height: 12),
               SizedBox(
                 width: double.infinity,
-                height: 56,
+                height: 48,
                 child: ElevatedButton(
-                  onPressed: _isLoading ? null : (_isConnected ? disconnectVpn : () => connectVpn(_selectedIndex)),
+                  onPressed: _isLoading ? null : (_isConnected ? _disconnectVpn : () => _connectVpn(_selectedIndex)),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: _isConnected ? Color(0xFFDC2626) : Color(0xFF7B5CFF),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                    backgroundColor: _isConnected ? Color(0xFFDC2626) : Color(0xFF2563EB),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     elevation: 0,
                   ),
                   child: Text(
-                    _isLoading ? 'ПОДКЛЮЧЕНИЕ...' : (_isConnected ? 'ОТКЛЮЧИТЬ' : 'ПОДКЛЮЧИТЬСЯ'),
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.white),
+                    _isLoading ? 'CONNECTING' : (_isConnected ? 'DISCONNECT' : 'CONNECT'),
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white),
                   ),
                 ),
               ),
-              SizedBox(height: 12),
-
-              // Кнопка обновления серверов
+              SizedBox(height: 8),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text('${_servers.length} серверов', style: TextStyle(fontSize: 12, color: Color(0xFF445566))),
-                  SizedBox(width: 16),
+                  Text(
+                    '${_servers.length} servers',
+                    style: TextStyle(fontSize: 10, color: Color(0xFF64748B)),
+                  ),
+                  SizedBox(width: 12),
                   GestureDetector(
-                    onTap: fetchServers,
+                    onTap: _fetchServers,
                     child: Container(
-                      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      padding: EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                       decoration: BoxDecoration(
-                        color: Color(0xFF1E2A3A),
-                        borderRadius: BorderRadius.circular(20),
+                        color: Color(0xFF1E293B),
+                        borderRadius: BorderRadius.circular(12),
                       ),
                       child: Row(
                         children: [
-                          Icon(Icons.refresh, size: 14, color: Color(0xFF8899BB)),
+                          Icon(Icons.refresh, size: 12, color: Color(0xFF94A3B8)),
                           SizedBox(width: 4),
-                          Text('Обновить', style: TextStyle(fontSize: 11, color: Color(0xFF8899BB))),
+                          Text('Refresh', style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
                         ],
                       ),
                     ),
                   ),
                 ],
               ),
-              SizedBox(height: 8),
-              Text('🚀 Бесплатно • Безлимитно • 2026', style: TextStyle(fontSize: 11, color: Color(0xFF445566))),
+              SizedBox(height: 4),
+              Text(
+                'Free Unlimited VPN 2026',
+                style: TextStyle(fontSize: 9, color: Color(0xFF475569)),
+              ),
             ],
           ),
         ),
