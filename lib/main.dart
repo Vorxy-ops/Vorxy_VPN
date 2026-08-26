@@ -2,9 +2,9 @@ import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:openvpn_flutter/openvpn_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:openvpn_flutter/openvpn_flutter.dart';
 
 void main() => runApp(VorxyApp());
 
@@ -48,6 +48,22 @@ class _VorxyHomeState extends State<VorxyHome> {
   Timer? _timer;
   int _seconds = 0;
 
+  Map<String, String> _countryFlags = {
+    'US': '🇺🇸', 'GB': '🇬🇧', 'DE': '🇩🇪', 'FR': '🇫🇷',
+    'JP': '🇯🇵', 'KR': '🇰🇷', 'CN': '🇨🇳', 'RU': '🇷🇺',
+    'IN': '🇮🇳', 'BR': '🇧🇷', 'CA': '🇨🇦', 'AU': '🇦🇺',
+    'IT': '🇮🇹', 'ES': '🇪🇸', 'NL': '🇳🇱', 'SE': '🇸🇪',
+    'NO': '🇳🇴', 'DK': '🇩🇰', 'FI': '🇫🇮', 'PL': '🇵🇱',
+    'UA': '🇺🇦', 'TR': '🇹🇷', 'IL': '🇮🇱', 'SG': '🇸🇬',
+    'MY': '🇲🇾', 'ID': '🇮🇩', 'PH': '🇵🇭', 'VN': '🇻🇳',
+    'TH': '🇹🇭', 'EG': '🇪🇬', 'ZA': '🇿🇦', 'AR': '🇦🇷',
+    'CL': '🇨🇱', 'CO': '🇨🇴', 'PE': '🇵🇪', 'VE': '🇻🇪',
+    'MX': '🇲🇽', 'CH': '🇨🇭', 'AT': '🇦🇹', 'BE': '🇧🇪',
+    'GR': '🇬🇷', 'PT': '🇵🇹', 'HU': '🇭🇺', 'CZ': '🇨🇿',
+    'RO': '🇷🇴', 'BG': '🇧🇬', 'HR': '🇭🇷', 'SK': '🇸🇰',
+    'SI': '🇸🇮', 'LT': '🇱🇹', 'LV': '🇱🇻', 'EE': '🇪🇪',
+  };
+
   @override
   void initState() {
     super.initState();
@@ -83,6 +99,12 @@ class _VorxyHomeState extends State<VorxyHome> {
     });
   }
 
+  String _getFlag(String country) {
+    if (country.isEmpty) return '🌍';
+    final upper = country.toUpperCase();
+    return _countryFlags[upper] ?? '🌍';
+  }
+
   Future<void> _fetchServers() async {
     setState(() => _isLoadingServers = true);
     List<Map<String, dynamic>> servers = [];
@@ -94,22 +116,16 @@ class _VorxyHomeState extends State<VorxyHome> {
 
       if (response.statusCode == 200) {
         final lines = response.body.split('\n');
-        int count = 0;
-
         for (var line in lines) {
           if (line.trim().isEmpty) continue;
-
           final parts = line.split(',');
           if (parts.length < 15) continue;
-
-          // Проверяем, что это OpenVPN сервер
           if (parts[0] == '*' || parts[0].isEmpty) continue;
           if (parts[1] == 'HostName' || parts[1].isEmpty) continue;
 
           try {
             final configBase64 = parts[14].trim();
             if (configBase64.isEmpty) continue;
-
             final config = base64Decode(configBase64);
             final configStr = utf8.decode(config);
 
@@ -117,51 +133,29 @@ class _VorxyHomeState extends State<VorxyHome> {
               'host': parts[1].trim(),
               'country': parts[6].trim(),
               'config': configStr,
-              'remark': '${parts[6].trim()} ${parts[1].trim()}',
+              'remark': parts[6].trim(),
               'score': int.tryParse(parts[2] ?? '0') ?? 0,
             });
-            count++;
-          } catch (e) {
-            continue;
-          }
+          } catch (_) {}
         }
-
-        // Сортируем по рейтингу (чем выше, тем лучше)
-        servers.sort((a, b) => (b['score'] ?? 0).compareTo(a['score'] ?? 0));
-
-        print('✅ Found ${servers.length} OpenVPN servers');
+        servers.shuffle();
       }
-    } catch (e) {
-      print('Error fetching servers: $e');
-    }
+    } catch (_) {}
 
-    // Если серверов нет, добавляем запасные
     if (servers.isEmpty) {
       servers = [
-        {
-          'host': '185.162.235.223',
-          'country': 'DE',
-          'config': '',
-          'remark': 'Fallback Server 1',
-          'score': 0,
-        },
-        {
-          'host': '142.0.136.137',
-          'country': 'US',
-          'config': '',
-          'remark': 'Fallback Server 2',
-          'score': 0,
-        },
+        {'host': '185.162.235.223', 'country': 'DE', 'config': '', 'remark': 'Germany', 'score': 100},
+        {'host': '142.0.136.137', 'country': 'US', 'config': '', 'remark': 'USA', 'score': 95},
+        {'host': '103.152.112.157', 'country': 'JP', 'config': '', 'remark': 'Japan', 'score': 90},
       ];
     }
 
     setState(() {
-      _servers = servers;
+      _servers = servers.take(50).toList();
       if (_servers.isNotEmpty) _selectedIndex = 0;
       _isLoadingServers = false;
     });
-
-    _showSnackbar('Loaded ${_servers.length} servers');
+    _showSnackbar('${_servers.length} servers loaded');
   }
 
   Future<void> _connectVpn(int index) async {
@@ -171,6 +165,11 @@ class _VorxyHomeState extends State<VorxyHome> {
     }
 
     final server = _servers[index];
+    if (server['config'].isEmpty) {
+      _showSnackbar('This server has no config');
+      return;
+    }
+
     setState(() {
       _isLoading = true;
       _selectedServer = server['remark'] ?? server['host'];
@@ -190,9 +189,9 @@ class _VorxyHomeState extends State<VorxyHome> {
     } catch (e) {
       setState(() {
         _isLoading = false;
-        _statusText = 'Error: ${e.toString().substring(0, 30)}';
+        _statusText = 'Connection failed';
       });
-      _showSnackbar('Connection failed: ${e.toString().substring(0, 50)}');
+      _showSnackbar('Failed to connect');
     }
   }
 
@@ -208,10 +207,10 @@ class _VorxyHomeState extends State<VorxyHome> {
   }
 
   String _formatTime(int seconds) {
-    final hours = (seconds ~/ 3600).toString().padLeft(2, '0');
-    final minutes = ((seconds % 3600) ~/ 60).toString().padLeft(2, '0');
-    final secs = (seconds % 60).toString().padLeft(2, '0');
-    return '$hours:$minutes:$secs';
+    final h = (seconds ~/ 3600).toString().padLeft(2, '0');
+    final m = ((seconds % 3600) ~/ 60).toString().padLeft(2, '0');
+    final s = (seconds % 60).toString().padLeft(2, '0');
+    return '$h:$m:$s';
   }
 
   String _formatBytes(int bytes) {
@@ -273,11 +272,11 @@ class _VorxyHomeState extends State<VorxyHome> {
               ),
               SizedBox(height: 4),
               Text('Free Unlimited VPN', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12)),
-              SizedBox(height: 24),
+              SizedBox(height: 20),
               GestureDetector(
                 onTap: _isConnected ? _disconnectVpn : () => _connectVpn(_selectedIndex),
                 child: Container(
-                  width: 120, height: 120,
+                  width: 110, height: 110,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     gradient: LinearGradient(
@@ -287,37 +286,30 @@ class _VorxyHomeState extends State<VorxyHome> {
                     ),
                     boxShadow: _isConnected ? [BoxShadow(color: Color(0xFF22C55E).withOpacity(0.3), blurRadius: 30, spreadRadius: 5)] : [],
                   ),
-                  child: Icon(_isConnected ? Icons.vpn_key : Icons.vpn_lock, size: 48, color: Colors.white),
+                  child: Icon(_isConnected ? Icons.vpn_key : Icons.vpn_lock, size: 44, color: Colors.white),
                 ),
               ),
-              SizedBox(height: 16),
-              Text(_statusText, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+              SizedBox(height: 12),
+              Text(_statusText, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500)),
               SizedBox(height: 4),
               Text('Server: $_selectedServer', style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8))),
-              SizedBox(height: 16),
+              SizedBox(height: 12),
               Container(
-                padding: EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                decoration: BoxDecoration(color: Color(0xFF1E293B), borderRadius: BorderRadius.circular(12)),
+                padding: EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                decoration: BoxDecoration(color: Color(0xFF1E293B), borderRadius: BorderRadius.circular(10)),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
-                    Column(children: [Text('Time', style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))), Text(_connectionTime, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600))]),
-                    Column(children: [Text('Download', style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))), Text(_formatBytes(_dataReceived), style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600))]),
-                    Column(children: [Text('Upload', style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))), Text(_formatBytes(_dataSent), style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600))]),
+                    Column(children: [Text('Time', style: TextStyle(fontSize: 9, color: Color(0xFF94A3B8))), Text(_connectionTime, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600))]),
+                    Column(children: [Text('Download', style: TextStyle(fontSize: 9, color: Color(0xFF94A3B8))), Text(_formatBytes(_dataReceived), style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600))]),
+                    Column(children: [Text('Upload', style: TextStyle(fontSize: 9, color: Color(0xFF94A3B8))), Text(_formatBytes(_dataSent), style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600))]),
                   ],
                 ),
               ),
-              SizedBox(height: 16),
+              SizedBox(height: 12),
               Expanded(
                 child: _isLoadingServers
-                  ? Center(child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        CircularProgressIndicator(color: Color(0xFF2563EB)),
-                        SizedBox(height: 16),
-                        Text('Loading servers...', style: TextStyle(color: Color(0xFF94A3B8))),
-                      ],
-                    ))
+                  ? Center(child: CircularProgressIndicator(color: Color(0xFF2563EB)))
                   : ListView.builder(
                       itemCount: _servers.length,
                       itemBuilder: (ctx, idx) {
@@ -326,49 +318,33 @@ class _VorxyHomeState extends State<VorxyHome> {
                         return GestureDetector(
                           onTap: () { if (!_isConnected) setState(() => _selectedIndex = idx); },
                           child: Container(
-                            margin: EdgeInsets.only(bottom: 8),
-                            padding: EdgeInsets.all(16),
+                            margin: EdgeInsets.only(bottom: 6),
+                            padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                             decoration: BoxDecoration(
                               color: isSelected ? Color(0xFF1E293B) : Color(0xFF0F172A),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: isSelected ? Color(0xFF2563EB) : Color(0xFF1E293B),
-                                width: isSelected ? 2 : 1,
-                              ),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: isSelected ? Color(0xFF2563EB) : Color(0xFF1E293B), width: isSelected ? 2 : 1),
                             ),
                             child: Row(
                               children: [
-                                Icon(
-                                  Icons.public,
-                                  color: isSelected ? Color(0xFF2563EB) : Color(0xFF64748B),
-                                  size: 20,
-                                ),
+                                Text(_getFlag(server['country'] ?? ''), style: TextStyle(fontSize: 22)),
                                 SizedBox(width: 12),
                                 Expanded(
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Text(
-                                        server['remark'] ?? 'Server',
-                                        style: TextStyle(fontWeight: FontWeight.w500),
-                                      ),
-                                      Text(
-                                        server['host'] ?? '',
-                                        style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
-                                      ),
+                                      Text(server['remark'] ?? 'Server', style: TextStyle(fontWeight: FontWeight.w500)),
+                                      Text(server['host'] ?? '', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
                                     ],
                                   ),
                                 ),
                                 Container(
-                                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                   decoration: BoxDecoration(
                                     color: isSelected ? Color(0xFF2563EB) : Color(0xFF1E293B),
-                                    borderRadius: BorderRadius.circular(12),
+                                    borderRadius: BorderRadius.circular(10),
                                   ),
-                                  child: Text(
-                                    '${server['score'] ?? 0}',
-                                    style: TextStyle(fontSize: 10, color: Colors.white),
-                                  ),
+                                  child: Text('${server['score'] ?? 0}', style: TextStyle(fontSize: 10, color: Colors.white)),
                                 ),
                               ],
                             ),
@@ -377,10 +353,10 @@ class _VorxyHomeState extends State<VorxyHome> {
                       },
                     ),
               ),
-              SizedBox(height: 12),
+              SizedBox(height: 8),
               SizedBox(
                 width: double.infinity,
-                height: 48,
+                height: 44,
                 child: ElevatedButton(
                   onPressed: _isLoading ? null : (_isConnected ? _disconnectVpn : () => _connectVpn(_selectedIndex)),
                   style: ElevatedButton.styleFrom(
@@ -389,35 +365,33 @@ class _VorxyHomeState extends State<VorxyHome> {
                     elevation: 0,
                   ),
                   child: Text(
-                    _isLoading ? 'CONNECTING' : (_isConnected ? 'DISCONNECT' : 'CONNECT'),
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white),
+                    _isLoading ? 'CONNECTING...' : (_isConnected ? 'DISCONNECT' : 'CONNECT'),
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white),
                   ),
                 ),
               ),
-              SizedBox(height: 8),
+              SizedBox(height: 6),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text('${_servers.length} servers', style: TextStyle(fontSize: 10, color: Color(0xFF64748B))),
-                  SizedBox(width: 12),
+                  Text('${_servers.length} servers', style: TextStyle(fontSize: 9, color: Color(0xFF64748B))),
+                  SizedBox(width: 10),
                   GestureDetector(
                     onTap: _fetchServers,
                     child: Container(
-                      padding: EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                      decoration: BoxDecoration(color: Color(0xFF1E293B), borderRadius: BorderRadius.circular(12)),
+                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(color: Color(0xFF1E293B), borderRadius: BorderRadius.circular(10)),
                       child: Row(
                         children: [
                           Icon(Icons.refresh, size: 12, color: Color(0xFF94A3B8)),
-                          SizedBox(width: 4),
-                          Text('Refresh', style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
+                          SizedBox(width: 3),
+                          Text('Refresh', style: TextStyle(fontSize: 9, color: Color(0xFF94A3B8))),
                         ],
                       ),
                     ),
                   ),
                 ],
               ),
-              SizedBox(height: 4),
-              Text('Free Unlimited VPN 2026', style: TextStyle(fontSize: 9, color: Color(0xFF475569))),
             ],
           ),
         ),
