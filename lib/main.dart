@@ -15,36 +15,40 @@ class VorxyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Vorxy VPN',
       theme: ThemeData.dark().copyWith(
-        primaryColor: Color(0xFF2563EB),
-        scaffoldBackgroundColor: Color(0xFF0F172A),
-        appBarTheme: AppBarTheme(
+        primaryColor: const Color(0xFF2563EB),
+        scaffoldBackgroundColor: const Color(0xFF0F172A),
+        appBarTheme: const AppBarTheme(
           backgroundColor: Color(0xFF1E293B),
           elevation: 0,
           centerTitle: true,
         ),
-        cardTheme: CardTheme(
+        cardTheme: const CardThemeData(
           color: Color(0xFF1E293B),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(16)),
+          ),
         ),
-        floatingActionButtonTheme: FloatingActionButtonThemeData(
+        floatingActionButtonTheme: const FloatingActionButtonThemeData(
           backgroundColor: Color(0xFF2563EB),
           foregroundColor: Colors.white,
         ),
       ),
-      home: VorxyHome(),
+      home: const VorxyHome(),
       debugShowCheckedModeBanner: false,
     );
   }
 }
 
 class VorxyHome extends StatefulWidget {
+  const VorxyHome({super.key});
+
   @override
   _VorxyHomeState createState() => _VorxyHomeState();
 }
 
 class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
   final OpenVPN _openVpn = OpenVPN();
-  
+
   bool _isConnected = false;
   bool _isLoading = false;
   bool _isLoadingServers = false;
@@ -77,7 +81,7 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
     'https://raw.githubusercontent.com/ebrasha/free-v2ray-public-list/main/V2Ray-Config-By-EbraSha.txt',
   ];
 
-  Map<String, String> _countryFlags = {
+  final Map<String, String> _countryFlags = {
     'US': '🇺🇸', 'GB': '🇬🇧', 'DE': '🇩🇪', 'FR': '🇫🇷',
     'JP': '🇯🇵', 'KR': '🇰🇷', 'CN': '🇨🇳', 'RU': '🇷🇺',
     'IN': '🇮🇳', 'BR': '🇧🇷', 'CA': '🇨🇦', 'AU': '🇦🇺',
@@ -119,7 +123,11 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
   }
 
   Future<void> _requestPermissions() async {
-    await Permission.notification.request();
+    try {
+      await Permission.notification.request();
+    } catch (e) {
+      print('Permission error: $e');
+    }
   }
 
   Future<void> _loadSettings() async {
@@ -193,7 +201,7 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
 
     for (String source in _serverSources) {
       try {
-        final response = await http.get(Uri.parse(source)).timeout(Duration(seconds: 12));
+        final response = await http.get(Uri.parse(source)).timeout(const Duration(seconds: 12));
         if (response.statusCode == 200) {
           final lines = response.body.split('\n');
           for (String line in lines) {
@@ -283,7 +291,7 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
       }
 
       if (host.isEmpty) return null;
-      String country = _getCountryFromHost(host);
+      final String country = _getCountryFromHost(host);
 
       return {
         'url': url,
@@ -304,8 +312,30 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
 
   List<Map<String, dynamic>> _getFallbackServers() {
     return [
-      {'url': 'vless://b5e3e7e7-8f6a-4d4e-a4b2-1c8e9d0a5f6b@185.162.235.223:443?type=ws&path=/&encryption=none&security=tls#DE-1', 'protocol': 'vless', 'host': '185.162.235.223', 'port': 443, 'remark': 'Germany', 'country': 'DE', 'flag': '🇩🇪', 'config': 'vless://b5e3e7e7-8f6a-4d4e-a4b2-1c8e9d0a5f6b@185.162.235.223:443?type=ws&path=/&encryption=none&security=tls#DE-1', 'score': 85, 'ping': 120},
-      {'url': 'vmess://eyJ2IjoiMiIsInBzIjoiVVMtMSIsImFkZCI6IjE0Mi4wLjEzNi4xMzciLCJwb3J0IjoiODAiLCJpZCI6ImZmZmZmZmZmLWZmZmYtZmZmZi1mZmZmLWZmZmZmZmZmZmZmZiIsImFpZCI6IjAiLCJzY3kiOiJhdXRvIiwibmV0Ijoid3MiLCJ0eXBlIjoibm9uZSIsImhvc3QiOiIiLCJwYXRoIjoiIiwidGxzIjoiIn0=', 'protocol': 'vmess', 'host': '142.0.136.137', 'port': 80, 'remark': 'USA', 'country': 'US', 'flag': '🇺🇸', 'config': 'vmess://eyJ2IjoiMiIsInBzIjoiVVMtMSIsImFkZCI6IjE0Mi4wLjEzNi4xMzciLCJwb3J0IjoiODAiLCJpZCI6ImZmZmZmZmZmLWZmZmYtZmZmZi1mZmZmLWZmZmZmZmZmZmZmZiIsImFpZCI6IjAiLCJzY3kiOiJhdXRvIiwibmV0Ijoid3MiLCJ0eXBlIjoibm9uZSIsImhvc3QiOiIiLCJwYXRoIjoiIiwidGxzIjoiIn0=', 'score': 90, 'ping': 80},
+      {
+        'url': 'vless://b5e3e7e7-8f6a-4d4e-a4b2-1c8e9d0a5f6b@185.162.235.223:443?type=ws&path=/&encryption=none&security=tls#DE-1',
+        'protocol': 'vless',
+        'host': '185.162.235.223',
+        'port': 443,
+        'remark': 'Germany',
+        'country': 'DE',
+        'flag': '🇩🇪',
+        'config': 'vless://b5e3e7e7-8f6a-4d4e-a4b2-1c8e9d0a5f6b@185.162.235.223:443?type=ws&path=/&encryption=none&security=tls#DE-1',
+        'score': 85,
+        'ping': 120,
+      },
+      {
+        'url': 'vmess://eyJ2IjoiMiIsInBzIjoiVVMtMSIsImFkZCI6IjE0Mi4wLjEzNi4xMzciLCJwb3J0IjoiODAiLCJpZCI6ImZmZmZmZmZmLWZmZmYtZmZmZi1mZmZmLWZmZmZmZmZmZmZmZiIsImFpZCI6IjAiLCJzY3kiOiJhdXRvIiwibmV0Ijoid3MiLCJ0eXBlIjoibm9uZSIsImhvc3QiOiIiLCJwYXRoIjoiIiwidGxzIjoiIn0=',
+        'protocol': 'vmess',
+        'host': '142.0.136.137',
+        'port': 80,
+        'remark': 'USA',
+        'country': 'US',
+        'flag': '🇺🇸',
+        'config': 'vmess://eyJ2IjoiMiIsInBzIjoiVVMtMSIsImFkZCI6IjE0Mi4wLjEzNi4xMzciLCJwb3J0IjoiODAiLCJpZCI6ImZmZmZmZmZmLWZmZmYtZmZmZi1mZmZmLWZmZmZmZmZmZmZmZiIsImFpZCI6IjAiLCJzY3kiOiJhdXRvIiwibmV0Ijoid3MiLCJ0eXBlIjoibm9uZSIsImhvc3QiOiIiLCJwYXRoIjoiIiwidGxzIjoiIn0=',
+        'score': 90,
+        'ping': 80,
+      },
     ];
   }
 
@@ -352,7 +382,7 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
   }
 
   void _startTimer() {
-    _timer = Timer.periodic(Duration(seconds: 1), (timer) {
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       setState(() {
         _seconds++;
         _connectionTime = _formatTime(_seconds);
@@ -403,7 +433,7 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
 
   void _showSnackbar(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), duration: Duration(seconds: 2)),
+      SnackBar(content: Text(msg), duration: const Duration(seconds: 2)),
     );
   }
 
@@ -414,14 +444,14 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
   void _showSettings() {
     showModalBottomSheet(
       context: context,
-      backgroundColor: Color(0xFF1E293B),
-      shape: RoundedRectangleBorder(
+      backgroundColor: const Color(0xFF1E293B),
+      shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (context) => StatefulBuilder(
         builder: (context, setStateModal) {
           return Container(
-            padding: EdgeInsets.all(20),
+            padding: const EdgeInsets.all(20),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -429,38 +459,38 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Color(0xFF64748B),
+                    color: const Color(0xFF64748B),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
-                SizedBox(height: 20),
-                Text('Settings', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                SizedBox(height: 20),
+                const SizedBox(height: 20),
+                const Text('Settings', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 20),
                 SwitchListTile(
-                  title: Text('Kill Switch'),
-                  subtitle: Text('Block internet if VPN disconnects'),
+                  title: const Text('Kill Switch'),
+                  subtitle: const Text('Block internet if VPN disconnects'),
                   value: _isKillSwitch,
                   onChanged: (value) {
                     setStateModal(() => _isKillSwitch = value);
                     setState(() => _isKillSwitch = value);
                     _saveSettings();
                   },
-                  activeColor: Color(0xFF2563EB),
+                  activeColor: const Color(0xFF2563EB),
                 ),
                 SwitchListTile(
-                  title: Text('Auto Connect'),
-                  subtitle: Text('Auto-connect on app start'),
+                  title: const Text('Auto Connect'),
+                  subtitle: const Text('Auto-connect on app start'),
                   value: _isAutoConnect,
                   onChanged: (value) {
                     setStateModal(() => _isAutoConnect = value);
                     setState(() => _isAutoConnect = value);
                     _saveSettings();
                   },
-                  activeColor: Color(0xFF2563EB),
+                  activeColor: const Color(0xFF2563EB),
                 ),
-                SizedBox(height: 20),
-                Text('Protocol: $_protocolText', style: TextStyle(color: Color(0xFF94A3B8))),
-                SizedBox(height: 20),
+                const SizedBox(height: 20),
+                Text('Protocol: $_protocolText', style: const TextStyle(color: Color(0xFF94A3B8))),
+                const SizedBox(height: 20),
               ],
             ),
           );
@@ -474,8 +504,8 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
     return Scaffold(
       floatingActionButton: FloatingActionButton(
         onPressed: _showSettings,
-        child: Icon(Icons.settings),
-        backgroundColor: Color(0xFF2563EB),
+        child: const Icon(Icons.settings),
+        backgroundColor: const Color(0xFF2563EB),
       ),
       body: SafeArea(
         child: Padding(
@@ -487,17 +517,17 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.vpn_key, color: Color(0xFF2563EB), size: 28),
-                      SizedBox(width: 8),
-                      Text('Vorxy VPN', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF2563EB))),
+                      const Icon(Icons.vpn_key, color: Color(0xFF2563EB), size: 28),
+                      const SizedBox(width: 8),
+                      const Text('Vorxy VPN', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF2563EB))),
                     ],
                   ),
                   Container(
-                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: _isConnected ? Color(0xFF064E3B) : Color(0xFF1E293B),
+                      color: _isConnected ? const Color(0xFF064E3B) : const Color(0xFF1E293B),
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: _isConnected ? Color(0xFF22C55E) : Color(0xFF64748B), width: 1),
+                      border: Border.all(color: _isConnected ? const Color(0xFF22C55E) : const Color(0xFF64748B), width: 1),
                     ),
                     child: Row(
                       children: [
@@ -506,16 +536,16 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
                           height: 8,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: _isConnected ? Color(0xFF22C55E) : Color(0xFF64748B),
+                            color: _isConnected ? const Color(0xFF22C55E) : const Color(0xFF64748B),
                           ),
                         ),
-                        SizedBox(width: 6),
+                        const SizedBox(width: 6),
                         Text(
                           _isConnected ? 'Protected' : 'Disconnected',
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
-                            color: _isConnected ? Color(0xFF22C55E) : Color(0xFF64748B),
+                            color: _isConnected ? const Color(0xFF22C55E) : const Color(0xFF64748B),
                           ),
                         ),
                       ],
@@ -523,9 +553,9 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
                   ),
                 ],
               ),
-              SizedBox(height: 4),
-              Text('Free Unlimited VPN', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12)),
-              SizedBox(height: 20),
+              const SizedBox(height: 4),
+              const Text('Free Unlimited VPN', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12)),
+              const SizedBox(height: 20),
               Stack(
                 alignment: Alignment.center,
                 children: [
@@ -536,13 +566,13 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
                       shape: BoxShape.circle,
                       gradient: LinearGradient(
                         colors: _isConnected
-                            ? [Color(0xFF22C55E), Color(0xFF16A34A)]
-                            : [Color(0xFF1E293B), Color(0xFF334155)],
+                            ? [const Color(0xFF22C55E), const Color(0xFF16A34A)]
+                            : [const Color(0xFF1E293B), const Color(0xFF334155)],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
                       boxShadow: _isConnected
-                          ? [BoxShadow(color: Color(0xFF22C55E).withOpacity(0.3), blurRadius: 30, spreadRadius: 5)]
+                          ? [BoxShadow(color: const Color(0xFF22C55E).withOpacity(0.3), blurRadius: 30, spreadRadius: 5)]
                           : [],
                     ),
                     child: GestureDetector(
@@ -550,7 +580,7 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
                       child: Container(
                         width: 130,
                         height: 130,
-                        decoration: BoxDecoration(
+                        decoration: const BoxDecoration(
                           shape: BoxShape.circle,
                           color: Colors.transparent,
                         ),
@@ -569,12 +599,12 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
                         children: List.generate(4, (i) {
                           final active = i < (_signalStrength * 4).round();
                           return Container(
-                            margin: EdgeInsets.symmetric(horizontal: 2),
+                            margin: const EdgeInsets.symmetric(horizontal: 2),
                             width: 8,
                             height: 8,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              color: active ? Color(0xFF22C55E) : Color(0xFF64748B),
+                              color: active ? const Color(0xFF22C55E) : const Color(0xFF64748B),
                             ),
                           );
                         }),
@@ -582,21 +612,21 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
                     ),
                 ],
               ),
-              SizedBox(height: 16),
+              const SizedBox(height: 16),
               Text(
                 _isConnected ? 'Protected' : _statusText,
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
               ),
-              SizedBox(height: 4),
+              const SizedBox(height: 4),
               Text(
                 _isConnected ? 'Location: $_serverLocation • $_protocolText' : 'Tap to connect',
-                style: TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
+                style: const TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
               ),
-              SizedBox(height: 16),
+              const SizedBox(height: 16),
               Container(
-                padding: EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
                 decoration: BoxDecoration(
-                  color: Color(0xFF1E293B),
+                  color: const Color(0xFF1E293B),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(
@@ -604,82 +634,82 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
                   children: [
                     Column(
                       children: [
-                        Text('Time', style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
-                        Text(_connectionTime, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                        const Text('Time', style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
+                        Text(_connectionTime, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
                       ],
                     ),
                     Column(
                       children: [
-                        Text('Download', style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
-                        Text(_formatBytes(_dataReceived), style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                        const Text('Download', style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
+                        Text(_formatBytes(_dataReceived), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
                       ],
                     ),
                     Column(
                       children: [
-                        Text('Upload', style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
-                        Text(_formatBytes(_dataSent), style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                        const Text('Upload', style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
+                        Text(_formatBytes(_dataSent), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
                       ],
                     ),
                     Column(
                       children: [
-                        Text('Speed', style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
+                        const Text('Speed', style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
                         Text(
                           _isConnected ? _formatSpeed(_dataReceived + _dataSent, _seconds == 0 ? 1 : _seconds) : '0 B/s',
-                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                         ),
                       ],
                     ),
                   ],
                 ),
               ),
-              SizedBox(height: 12),
+              const SizedBox(height: 12),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(_sourceInfo, style: TextStyle(fontSize: 10, color: Color(0xFF64748B))),
+                  Text(_sourceInfo, style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))),
                   Row(
                     children: [
                       GestureDetector(
                         onTap: _refreshServers,
                         child: Container(
-                          padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                           decoration: BoxDecoration(
-                            color: Color(0xFF1E293B),
+                            color: const Color(0xFF1E293B),
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Row(
                             children: [
-                              Icon(Icons.refresh, size: 12, color: Color(0xFF94A3B8)),
-                              SizedBox(width: 3),
-                              Text('Refresh', style: TextStyle(fontSize: 9, color: Color(0xFF94A3B8))),
+                              const Icon(Icons.refresh, size: 12, color: Color(0xFF94A3B8)),
+                              const SizedBox(width: 3),
+                              const Text('Refresh', style: TextStyle(fontSize: 9, color: Color(0xFF94A3B8))),
                             ],
                           ),
                         ),
                       ),
-                      SizedBox(width: 8),
+                      const SizedBox(width: 8),
                       if (_isKillSwitch)
                         Container(
-                          padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
-                            color: Color(0xFF4A1A1A),
+                            color: const Color(0xFF4A1A1A),
                             borderRadius: BorderRadius.circular(8),
                           ),
-                          child: Text('Kill', style: TextStyle(fontSize: 8, color: Color(0xFFEF4444))),
+                          child: const Text('Kill', style: TextStyle(fontSize: 8, color: Color(0xFFEF4444))),
                         ),
                     ],
                   ),
                 ],
               ),
-              SizedBox(height: 8),
+              const SizedBox(height: 8),
               Expanded(
                 child: _isLoadingServers
                     ? Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            CircularProgressIndicator(color: Color(0xFF2563EB)),
-                            SizedBox(height: 12),
-                            Text('Loading servers...', style: TextStyle(color: Color(0xFF94A3B8))),
+                            const CircularProgressIndicator(color: Color(0xFF2563EB)),
+                            const SizedBox(height: 12),
+                            const Text('Loading servers...', style: TextStyle(color: Color(0xFF94A3B8))),
                           ],
                         ),
                       )
@@ -688,7 +718,7 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
                             child: Text(
                               'No servers available\nPull to refresh',
                               textAlign: TextAlign.center,
-                              style: TextStyle(color: Color(0xFF94A3B8)),
+                              style: const TextStyle(color: Color(0xFF94A3B8)),
                             ),
                           )
                         : ListView.builder(
@@ -698,12 +728,12 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
                               final isSelected = idx == _selectedIndex;
                               final ping = server['ping'] ?? 100;
                               final protocol = server['protocol'] ?? 'unknown';
-                              final protocolColor = protocol == 'vless' ? Color(0xFF8B5CF6)
-                                  : protocol == 'vmess' ? Color(0xFF3B82F6)
-                                  : protocol == 'trojan' ? Color(0xFFEF4444)
-                                  : protocol == 'shadowsocks' ? Color(0xFFF59E0B)
-                                  : protocol == 'hysteria2' ? Color(0xFF10B981)
-                                  : Color(0xFF64748B);
+                              final protocolColor = protocol == 'vless' ? const Color(0xFF8B5CF6)
+                                  : protocol == 'vmess' ? const Color(0xFF3B82F6)
+                                  : protocol == 'trojan' ? const Color(0xFFEF4444)
+                                  : protocol == 'shadowsocks' ? const Color(0xFFF59E0B)
+                                  : protocol == 'hysteria2' ? const Color(0xFF10B981)
+                                  : const Color(0xFF64748B);
 
                               return GestureDetector(
                                 onTap: () {
@@ -712,37 +742,37 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
                                   }
                                 },
                                 child: Container(
-                                  margin: EdgeInsets.only(bottom: 6),
-                                  padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                  margin: const EdgeInsets.only(bottom: 6),
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                                   decoration: BoxDecoration(
-                                    color: isSelected ? Color(0xFF1E293B) : Color(0xFF0F172A),
+                                    color: isSelected ? const Color(0xFF1E293B) : const Color(0xFF0F172A),
                                     borderRadius: BorderRadius.circular(10),
                                     border: Border.all(
-                                      color: isSelected ? Color(0xFF2563EB) : Color(0xFF1E293B),
+                                      color: isSelected ? const Color(0xFF2563EB) : const Color(0xFF1E293B),
                                       width: isSelected ? 2 : 1,
                                     ),
                                   ),
                                   child: Row(
                                     children: [
-                                      Text(server['flag'] ?? '🌍', style: TextStyle(fontSize: 22)),
-                                      SizedBox(width: 12),
+                                      Text(server['flag'] ?? '🌍', style: const TextStyle(fontSize: 22)),
+                                      const SizedBox(width: 12),
                                       Expanded(
                                         child: Column(
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
                                             Text(
                                               server['remark'] ?? 'Server',
-                                              style: TextStyle(fontWeight: FontWeight.w500),
+                                              style: const TextStyle(fontWeight: FontWeight.w500),
                                             ),
                                             Row(
                                               children: [
                                                 Text(
                                                   '${server['host'] ?? ''}:${server['port'] ?? 443}',
-                                                  style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
+                                                  style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
                                                 ),
-                                                SizedBox(width: 8),
+                                                const SizedBox(width: 8),
                                                 Container(
-                                                  padding: EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                                                   decoration: BoxDecoration(
                                                     color: protocolColor.withOpacity(0.2),
                                                     borderRadius: BorderRadius.circular(4),
@@ -762,14 +792,14 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
                                           Icon(
                                             Icons.signal_cellular_alt,
                                             size: 14,
-                                            color: ping < 150 ? Color(0xFF22C55E)
-                                                : ping < 300 ? Color(0xFFF59E0B)
-                                                : Color(0xFFEF4444),
+                                            color: ping < 150 ? const Color(0xFF22C55E)
+                                                : ping < 300 ? const Color(0xFFF59E0B)
+                                                : const Color(0xFFEF4444),
                                           ),
-                                          SizedBox(width: 4),
+                                          const SizedBox(width: 4),
                                           Text(
                                             '${ping}ms',
-                                            style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
+                                            style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
                                           ),
                                         ],
                                       ),
@@ -780,20 +810,20 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
                             },
                           ),
               ),
-              SizedBox(height: 8),
+              const SizedBox(height: 8),
               SizedBox(
                 width: double.infinity,
                 height: 48,
                 child: ElevatedButton(
                   onPressed: _isLoading ? null : (_isConnected ? _disconnectVpn : () => _connectVpn(_selectedIndex)),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: _isConnected ? Color(0xFFDC2626) : Color(0xFF2563EB),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    backgroundColor: _isConnected ? const Color(0xFFDC2626) : const Color(0xFF2563EB),
+                    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(8))),
                     elevation: 0,
                   ),
                   child: Text(
                     _isLoading ? 'CONNECTING...' : (_isConnected ? 'DISCONNECT' : 'CONNECT'),
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white),
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white),
                   ),
                 ),
               ),
