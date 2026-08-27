@@ -69,12 +69,10 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
   int _seconds = 0;
   String _sourceInfo = 'Loading...';
 
-  // Только рабочие источники OpenVPN конфигов
-  final List<String> _serverSources = [
-    'https://raw.githubusercontent.com/wlunlocker/vpn-configs/main/whitelist_all.txt',
-    'https://raw.githubusercontent.com/9xN/auto-ovpn/main/README.md',
-  ];
+  // 1. ЕДИНСТВЕННЫЙ ИСТОЧНИК: VPN Gate API (как в hiVPN и OmidVPN) [citation:1][citation:2]
+  final String _vpnGateApi = 'http://www.vpngate.net/api/iphone/';
 
+  // Карта флагов стран
   final Map<String, String> _countryFlags = {
     'US': '🇺🇸', 'GB': '🇬🇧', 'DE': '🇩🇪', 'FR': '🇫🇷',
     'JP': '🇯🇵', 'KR': '🇰🇷', 'CN': '🇨🇳', 'RU': '🇷🇺',
@@ -169,91 +167,85 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
     return _countryFlags[upper] ?? '🌍';
   }
 
-  String _getCountryFromHost(String host) {
-    final h = host.toLowerCase();
-    if (h.contains('de') || h.contains('germany')) return 'DE';
-    if (h.contains('us') || h.contains('usa') || h.contains('united states')) return 'US';
-    if (h.contains('jp') || h.contains('japan')) return 'JP';
-    if (h.contains('fr') || h.contains('france')) return 'FR';
-    if (h.contains('uk') || h.contains('gb') || h.contains('united kingdom')) return 'GB';
-    if (h.contains('ru') || h.contains('russia')) return 'RU';
-    if (h.contains('nl') || h.contains('netherlands')) return 'NL';
-    if (h.contains('ca') || h.contains('canada')) return 'CA';
-    if (h.contains('au') || h.contains('australia')) return 'AU';
-    if (h.contains('br') || h.contains('brazil')) return 'BR';
-    if (h.contains('in') || h.contains('india')) return 'IN';
-    return 'US';
-  }
-
+  // 2. ПАРСИНГ API VPN Gate (как в проекте hiVPN) [citation:2][citation:11]
   Future<void> _fetchAllServers() async {
     setState(() {
       _isLoadingServers = true;
-      _sourceInfo = 'Loading servers...';
+      _sourceInfo = 'Loading servers from VPN Gate...';
     });
 
     List<Map<String, dynamic>> allConfigs = [];
 
-    for (String source in _serverSources) {
-      try {
-        final response = await http.get(Uri.parse(source)).timeout(const Duration(seconds: 15));
-        if (response.statusCode == 200) {
-          final lines = response.body.split('\n');
-          for (String line in lines) {
-            line = line.trim();
-            if (line.isEmpty) continue;
+    try {
+      final response = await http.get(Uri.parse(_vpnGateApi)).timeout(
+        const Duration(seconds: 15),
+      );
 
-            // Парсим .ovpn конфиги
-            if (line.startsWith('http') && (line.endsWith('.ovpn') || line.contains('ovpn'))) {
-              try {
-                final configResponse = await http.get(Uri.parse(line)).timeout(const Duration(seconds: 10));
-                if (configResponse.statusCode == 200) {
-                  final config = configResponse.body;
-                  if (config.contains('client') && config.contains('dev tun')) {
-                    final host = line.split('/').last.replaceAll('.ovpn', '');
-                    final country = _getCountryFromHost(host);
-                    allConfigs.add({
-                      'host': host,
-                      'country': country,
-                      'config': config,
-                      'remark': host,
-                      'flag': _getFlag(country),
-                      'score': 100,
-                      'ping': 50 + (allConfigs.length % 200),
-                    });
-                  }
-                }
-              } catch (_) {}
+      if (response.statusCode == 200) {
+        final lines = response.body.split('\n');
+        for (var line in lines) {
+          if (line.trim().isEmpty) continue;
+          if (line.startsWith('#')) continue; // Пропускаем заголовки CSV
+
+          final parts = line.split(',');
+          if (parts.length < 15) continue;
+
+          // Проверяем, что это OpenVPN-сервер и есть конфиг [citation:2]
+          final configBase64 = parts[14].trim();
+          if (configBase64.isEmpty) continue;
+
+          try {
+            final config = base64Decode(configBase64);
+            final configStr = utf8.decode(config);
+
+            // Фильтруем: конфиг должен содержать ключевые строки OpenVPN
+            if (configStr.contains('client') && configStr.contains('dev tun')) {
+              final host = parts[1].trim();
+              final country = parts[6].trim();
+              final score = int.tryParse(parts[2] ?? '0') ?? 0;
+
+              allConfigs.add({
+                'host': host,
+                'country': country,
+                'config': configStr,
+                'remark': '$country $host',
+                'flag': _getFlag(country),
+                'score': score,
+                'ping': 50 + (allConfigs.length % 200),
+              });
             }
+          } catch (_) {
+            // Пропускаем битые конфиги
           }
         }
-      } catch (e) {
-        print('Error: $e');
       }
+    } catch (e) {
+      print('Error fetching VPN Gate: $e');
+      _showSnackbar('Failed to load servers');
     }
 
-    // Если нет конфигов, используем резервные
+    // 3. Если серверов нет — используем минимальный резерв
     if (allConfigs.isEmpty) {
       allConfigs = _getFallbackServers();
     }
 
-    // Перемешиваем и сортируем
-    allConfigs.shuffle();
+    // Сортируем по рейтингу (score) — лучшие сверху [citation:2]
+    allConfigs.sort((a, b) => (b['score'] ?? 0).compareTo(a['score'] ?? 0));
 
     setState(() {
       _allServers = allConfigs;
       _servers = allConfigs.length > 50 ? allConfigs.sublist(0, 50) : allConfigs;
       if (_servers.isNotEmpty) _selectedIndex = 0;
       _isLoadingServers = false;
-      _sourceInfo = '${_servers.length} servers ready';
+      _sourceInfo = '${_servers.length} servers loaded (${_allServers.length} total)';
     });
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('servers', jsonEncode(_allServers));
-    _showSnackbar('${_servers.length} servers loaded');
+    _showSnackbar('${_servers.length} servers ready');
   }
 
   List<Map<String, dynamic>> _getFallbackServers() {
-    // Резервные серверы только если ничего не загрузилось
     return [
       {
         'host': '185.162.235.223',
@@ -694,6 +686,7 @@ auth SHA256
                               final isSelected = idx == _selectedIndex;
                               final ping = server['ping'] ?? 100;
                               final hasConfig = server['config'] != null && server['config'].toString().isNotEmpty;
+                              final score = server['score'] ?? 0;
 
                               return GestureDetector(
                                 onTap: () {
@@ -766,6 +759,21 @@ auth SHA256
                                             Text(
                                               '${ping}ms',
                                               style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                              decoration: BoxDecoration(
+                                                color: score > 80 ? Colors.green.withOpacity(0.2) : Colors.grey.withOpacity(0.2),
+                                                borderRadius: BorderRadius.circular(4),
+                                              ),
+                                              child: Text(
+                                                '$score%',
+                                                style: TextStyle(
+                                                  fontSize: 8,
+                                                  color: score > 80 ? Colors.green : Colors.grey,
+                                                ),
+                                              ),
                                             ),
                                           ],
                                         ),
