@@ -9,7 +9,6 @@
     <application
         android:label="Vorxy VPN"
         android:name="${applicationName}"
-        android:extractNativeLibs="true"
         android:usesCleartextTraffic="true"
         android:requestLegacyExternalStorage="true">
 
