@@ -69,16 +69,10 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
   int _seconds = 0;
   String _sourceInfo = 'Loading...';
 
+  // Только рабочие источники OpenVPN конфигов
   final List<String> _serverSources = [
-    'https://raw.githubusercontent.com/Hidashimora/free-vpn-anti-rkn/main/configs/1.1.txt',
-    'https://raw.githubusercontent.com/Hidashimora/free-vpn-anti-rkn/main/configs/2.1.txt',
-    'https://raw.githubusercontent.com/Hidashimora/free-vpn-anti-rkn/main/configs/3.1.txt',
-    'https://raw.githubusercontent.com/Hidashimora/free-vpn-anti-rkn/main/configs/4.1.txt',
-    'https://raw.githubusercontent.com/Hidashimora/free-vpn-anti-rkn/main/configs/5.1.txt',
-    'https://raw.githubusercontent.com/Hidashimora/free-vpn-anti-rkn/main/configs/6.1.txt',
-    'https://raw.githubusercontent.com/Hidashimora/free-vpn-anti-rkn/main/configs/7.1.txt',
-    'https://raw.githubusercontent.com/Hidashimora/free-vpn-anti-rkn/main/configs/8.1.txt',
-    'https://raw.githubusercontent.com/ebrasha/free-v2ray-public-list/main/V2Ray-Config-By-EbraSha.txt',
+    'https://raw.githubusercontent.com/wlunlocker/vpn-configs/main/whitelist_all.txt',
+    'https://raw.githubusercontent.com/9xN/auto-ovpn/main/README.md',
   ];
 
   final Map<String, String> _countryFlags = {
@@ -178,10 +172,10 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
   String _getCountryFromHost(String host) {
     final h = host.toLowerCase();
     if (h.contains('de') || h.contains('germany')) return 'DE';
-    if (h.contains('us') || h.contains('usa')) return 'US';
+    if (h.contains('us') || h.contains('usa') || h.contains('united states')) return 'US';
     if (h.contains('jp') || h.contains('japan')) return 'JP';
     if (h.contains('fr') || h.contains('france')) return 'FR';
-    if (h.contains('uk') || h.contains('gb')) return 'GB';
+    if (h.contains('uk') || h.contains('gb') || h.contains('united kingdom')) return 'GB';
     if (h.contains('ru') || h.contains('russia')) return 'RU';
     if (h.contains('nl') || h.contains('netherlands')) return 'NL';
     if (h.contains('ca') || h.contains('canada')) return 'CA';
@@ -201,19 +195,34 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
 
     for (String source in _serverSources) {
       try {
-        final response = await http.get(Uri.parse(source)).timeout(const Duration(seconds: 12));
+        final response = await http.get(Uri.parse(source)).timeout(const Duration(seconds: 15));
         if (response.statusCode == 200) {
           final lines = response.body.split('\n');
           for (String line in lines) {
             line = line.trim();
             if (line.isEmpty) continue;
-            if (line.startsWith('vless://') ||
-                line.startsWith('vmess://') ||
-                line.startsWith('trojan://') ||
-                line.startsWith('ss://') ||
-                line.startsWith('hy2://')) {
-              final parsed = _parseConfig(line);
-              if (parsed != null) allConfigs.add(parsed);
+
+            // Парсим .ovpn конфиги
+            if (line.startsWith('http') && (line.endsWith('.ovpn') || line.contains('ovpn'))) {
+              try {
+                final configResponse = await http.get(Uri.parse(line)).timeout(const Duration(seconds: 10));
+                if (configResponse.statusCode == 200) {
+                  final config = configResponse.body;
+                  if (config.contains('client') && config.contains('dev tun')) {
+                    final host = line.split('/').last.replaceAll('.ovpn', '');
+                    final country = _getCountryFromHost(host);
+                    allConfigs.add({
+                      'host': host,
+                      'country': country,
+                      'config': config,
+                      'remark': host,
+                      'flag': _getFlag(country),
+                      'score': 100,
+                      'ping': 50 + (allConfigs.length % 200),
+                    });
+                  }
+                }
+              } catch (_) {}
             }
           }
         }
@@ -222,19 +231,17 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
       }
     }
 
+    // Если нет конфигов, используем резервные
     if (allConfigs.isEmpty) {
       allConfigs = _getFallbackServers();
     }
 
+    // Перемешиваем и сортируем
     allConfigs.shuffle();
-    for (int i = 0; i < allConfigs.length; i++) {
-      allConfigs[i]['score'] = 100 - (i % 100);
-      allConfigs[i]['ping'] = 50 + (i % 200);
-    }
 
     setState(() {
       _allServers = allConfigs;
-      _servers = allConfigs.length > 100 ? allConfigs.sublist(0, 100) : allConfigs;
+      _servers = allConfigs.length > 50 ? allConfigs.sublist(0, 50) : allConfigs;
       if (_servers.isNotEmpty) _selectedIndex = 0;
       _isLoadingServers = false;
       _sourceInfo = '${_servers.length} servers ready';
@@ -245,94 +252,48 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
     _showSnackbar('${_servers.length} servers loaded');
   }
 
-  Map<String, dynamic>? _parseConfig(String url) {
-    try {
-      String protocol = 'unknown';
-      String host = '';
-      int port = 443;
-      String remark = 'Server';
-
-      if (url.startsWith('vless://')) {
-        protocol = 'vless';
-        final uri = Uri.parse(url);
-        host = uri.host;
-        port = uri.port;
-        remark = uri.fragment.isNotEmpty ? uri.fragment : 'VLESS';
-      } else if (url.startsWith('vmess://')) {
-        protocol = 'vmess';
-        final base64 = url.substring(8);
-        final decoded = utf8.decode(base64Decode(base64));
-        final data = jsonDecode(decoded);
-        host = data['add'] ?? '';
-        port = int.tryParse(data['port']?.toString() ?? '443') ?? 443;
-        remark = data['ps'] ?? 'VMESS';
-      } else if (url.startsWith('trojan://')) {
-        protocol = 'trojan';
-        final uri = Uri.parse(url);
-        host = uri.host;
-        port = uri.port;
-        remark = uri.fragment.isNotEmpty ? uri.fragment : 'Trojan';
-      } else if (url.startsWith('ss://')) {
-        protocol = 'shadowsocks';
-        final content = url.substring(5);
-        if (content.contains('@')) {
-          final parts = content.split('@');
-          final hostPort = parts[1].split(':');
-          host = hostPort[0];
-          port = int.tryParse(hostPort[1]) ?? 443;
-          remark = 'SS';
-        }
-      } else if (url.startsWith('hy2://')) {
-        protocol = 'hysteria2';
-        final uri = Uri.parse(url);
-        host = uri.host;
-        port = uri.port;
-        remark = 'Hysteria2';
-      }
-
-      if (host.isEmpty) return null;
-      final String country = _getCountryFromHost(host);
-
-      return {
-        'url': url,
-        'protocol': protocol,
-        'host': host,
-        'port': port,
-        'remark': remark,
-        'country': country,
-        'flag': _getFlag(country),
-        'config': url,
-        'score': 50,
-        'ping': 100 + (port % 200),
-      };
-    } catch (_) {
-      return null;
-    }
-  }
-
   List<Map<String, dynamic>> _getFallbackServers() {
+    // Резервные серверы только если ничего не загрузилось
     return [
       {
-        'url': 'vless://b5e3e7e7-8f6a-4d4e-a4b2-1c8e9d0a5f6b@185.162.235.223:443?type=ws&path=/&encryption=none&security=tls#DE-1',
-        'protocol': 'vless',
         'host': '185.162.235.223',
-        'port': 443,
-        'remark': 'Germany',
         'country': 'DE',
+        'config': '''client
+dev tun
+proto tcp
+remote 185.162.235.223 443
+resolv-retry infinite
+nobind
+persist-key
+persist-tun
+remote-cert-tls server
+cipher AES-256-CBC
+verb 3
+auth SHA256
+''',
+        'remark': 'Fallback Germany',
         'flag': '🇩🇪',
-        'config': 'vless://b5e3e7e7-8f6a-4d4e-a4b2-1c8e9d0a5f6b@185.162.235.223:443?type=ws&path=/&encryption=none&security=tls#DE-1',
-        'score': 85,
+        'score': 100,
         'ping': 120,
       },
       {
-        'url': 'vmess://eyJ2IjoiMiIsInBzIjoiVVMtMSIsImFkZCI6IjE0Mi4wLjEzNi4xMzciLCJwb3J0IjoiODAiLCJpZCI6ImZmZmZmZmZmLWZmZmYtZmZmZi1mZmZmLWZmZmZmZmZmZmZmZiIsImFpZCI6IjAiLCJzY3kiOiJhdXRvIiwibmV0Ijoid3MiLCJ0eXBlIjoibm9uZSIsImhvc3QiOiIiLCJwYXRoIjoiIiwidGxzIjoiIn0=',
-        'protocol': 'vmess',
         'host': '142.0.136.137',
-        'port': 80,
-        'remark': 'USA',
         'country': 'US',
+        'config': '''client
+dev tun
+proto tcp
+remote 142.0.136.137 80
+resolv-retry infinite
+nobind
+persist-key
+persist-tun
+remote-cert-tls server
+cipher AES-256-CBC
+verb 3
+auth SHA256
+''',
+        'remark': 'Fallback USA',
         'flag': '🇺🇸',
-        'config': 'vmess://eyJ2IjoiMiIsInBzIjoiVVMtMSIsImFkZCI6IjE0Mi4wLjEzNi4xMzciLCJwb3J0IjoiODAiLCJpZCI6ImZmZmZmZmZmLWZmZmYtZmZmZi1mZmZmLWZmZmZmZmZmZmZmZiIsImFpZCI6IjAiLCJzY3kiOiJhdXRvIiwibmV0Ijoid3MiLCJ0eXBlIjoibm9uZSIsImhvc3QiOiIiLCJwYXRoIjoiIiwidGxzIjoiIn0=',
         'score': 90,
         'ping': 80,
       },
@@ -346,16 +307,21 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
     }
 
     final server = _servers[index];
+    if (server['config'] == null || server['config'].toString().isEmpty) {
+      _showSnackbar('No config for this server');
+      return;
+    }
+
     setState(() {
       _isLoading = true;
       _selectedServer = server['remark'] ?? server['host'];
       _serverLocation = server['country'] ?? '';
-      _protocolText = server['protocol'] ?? 'OpenVPN';
+      _protocolText = 'OpenVPN';
       _statusText = 'Connecting...';
     });
 
     try {
-      await _openVpn.connect(server['config'], server['remark']);
+      await _openVpn.connect(server['config'].toString(), server['remark']);
       setState(() {
         _isConnected = true;
         _isLoading = false;
@@ -727,13 +693,7 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
                               final server = _servers[idx];
                               final isSelected = idx == _selectedIndex;
                               final ping = server['ping'] ?? 100;
-                              final protocol = server['protocol'] ?? 'unknown';
-                              final protocolColor = protocol == 'vless' ? const Color(0xFF8B5CF6)
-                                  : protocol == 'vmess' ? const Color(0xFF3B82F6)
-                                  : protocol == 'trojan' ? const Color(0xFFEF4444)
-                                  : protocol == 'shadowsocks' ? const Color(0xFFF59E0B)
-                                  : protocol == 'hysteria2' ? const Color(0xFF10B981)
-                                  : const Color(0xFF64748B);
+                              final hasConfig = server['config'] != null && server['config'].toString().isNotEmpty;
 
                               return GestureDetector(
                                 onTap: () {
@@ -748,7 +708,11 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
                                     color: isSelected ? const Color(0xFF1E293B) : const Color(0xFF0F172A),
                                     borderRadius: BorderRadius.circular(10),
                                     border: Border.all(
-                                      color: isSelected ? const Color(0xFF2563EB) : const Color(0xFF1E293B),
+                                      color: isSelected
+                                          ? const Color(0xFF2563EB)
+                                          : hasConfig
+                                              ? const Color(0xFF1E293B)
+                                              : const Color(0xFF4A1A1A),
                                       width: isSelected ? 2 : 1,
                                     ),
                                   ),
@@ -762,47 +726,49 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
                                           children: [
                                             Text(
                                               server['remark'] ?? 'Server',
-                                              style: const TextStyle(fontWeight: FontWeight.w500),
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w500,
+                                                color: hasConfig ? Colors.white : const Color(0xFF64748B),
+                                              ),
                                             ),
-                                            Row(
-                                              children: [
-                                                Text(
-                                                  '${server['host'] ?? ''}:${server['port'] ?? 443}',
-                                                  style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
-                                                ),
-                                                const SizedBox(width: 8),
-                                                Container(
-                                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                                                  decoration: BoxDecoration(
-                                                    color: protocolColor.withOpacity(0.2),
-                                                    borderRadius: BorderRadius.circular(4),
-                                                  ),
-                                                  child: Text(
-                                                    protocol,
-                                                    style: TextStyle(fontSize: 8, color: protocolColor),
-                                                  ),
-                                                ),
-                                              ],
+                                            Text(
+                                              server['host'] ?? '',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: hasConfig ? const Color(0xFF94A3B8) : const Color(0xFF4A4A4A),
+                                              ),
                                             ),
                                           ],
                                         ),
                                       ),
-                                      Row(
-                                        children: [
-                                          Icon(
-                                            Icons.signal_cellular_alt,
-                                            size: 14,
-                                            color: ping < 150 ? const Color(0xFF22C55E)
-                                                : ping < 300 ? const Color(0xFFF59E0B)
-                                                : const Color(0xFFEF4444),
+                                      if (!hasConfig)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFF4A1A1A),
+                                            borderRadius: BorderRadius.circular(10),
                                           ),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            '${ping}ms',
-                                            style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
-                                          ),
-                                        ],
-                                      ),
+                                          child: const Text('No config', style: TextStyle(fontSize: 9, color: Color(0xFFEF4444))),
+                                        ),
+                                      if (hasConfig)
+                                        Row(
+                                          children: [
+                                            Icon(
+                                              Icons.signal_cellular_alt,
+                                              size: 14,
+                                              color: ping < 150
+                                                  ? const Color(0xFF22C55E)
+                                                  : ping < 300
+                                                      ? const Color(0xFFF59E0B)
+                                                      : const Color(0xFFEF4444),
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              '${ping}ms',
+                                              style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
+                                            ),
+                                          ],
+                                        ),
                                     ],
                                   ),
                                 ),
