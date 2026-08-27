@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:openvpn_flutter/openvpn_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:flutter/services.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 void main() => runApp(VorxyApp());
 
@@ -24,7 +24,7 @@ class VorxyApp extends StatelessWidget {
         ),
         cardTheme: CardTheme(
           color: Color(0xFF1E293B),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         ),
         floatingActionButtonTheme: FloatingActionButtonThemeData(
           backgroundColor: Color(0xFF2563EB),
@@ -44,6 +44,7 @@ class VorxyHome extends StatefulWidget {
 
 class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
   final OpenVPN _openVpn = OpenVPN();
+  
   bool _isConnected = false;
   bool _isLoading = false;
   bool _isLoadingServers = false;
@@ -61,11 +62,8 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
   List<Map<String, dynamic>> _allServers = [];
   int _selectedIndex = 0;
   Timer? _timer;
-  Timer? _speedTimer;
   int _seconds = 0;
   String _sourceInfo = 'Loading...';
-  bool _isDarkMode = true;
-  List<String> _excludedApps = [];
 
   final List<String> _serverSources = [
     'https://raw.githubusercontent.com/Hidashimora/free-vpn-anti-rkn/main/configs/1.1.txt',
@@ -90,6 +88,9 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
     'TH': '🇹🇭', 'EG': '🇪🇬', 'ZA': '🇿🇦', 'AR': '🇦🇷',
     'CL': '🇨🇱', 'CO': '🇨🇴', 'PE': '🇵🇪', 'VE': '🇻🇪',
     'MX': '🇲🇽', 'CH': '🇨🇭', 'AT': '🇦🇹', 'BE': '🇧🇪',
+    'GR': '🇬🇷', 'PT': '🇵🇹', 'HU': '🇭🇺', 'CZ': '🇨🇿',
+    'RO': '🇷🇴', 'BG': '🇧🇬', 'HR': '🇭🇷', 'SK': '🇸🇰',
+    'SI': '🇸🇮', 'LT': '🇱🇹', 'LV': '🇱🇻', 'EE': '🇪🇪',
   };
 
   @override
@@ -100,12 +101,12 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
     _loadSettings();
     _fetchAllServers();
     _checkConnectivity();
+    _requestPermissions();
   }
 
   @override
   void dispose() {
     _timer?.cancel();
-    _speedTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -117,12 +118,15 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _requestPermissions() async {
+    await Permission.notification.request();
+  }
+
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _isKillSwitch = prefs.getBool('killSwitch') ?? false;
       _isAutoConnect = prefs.getBool('autoConnect') ?? false;
-      _isDarkMode = prefs.getBool('darkMode') ?? true;
     });
   }
 
@@ -130,7 +134,6 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('killSwitch', _isKillSwitch);
     await prefs.setBool('autoConnect', _isAutoConnect);
-    await prefs.setBool('darkMode', _isDarkMode);
   }
 
   Future<void> _initVpn() async {
@@ -165,18 +168,18 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
   }
 
   String _getCountryFromHost(String host) {
-    final hosts = host.toLowerCase();
-    if (hosts.contains('de') || hosts.contains('germany')) return 'DE';
-    if (hosts.contains('us') || hosts.contains('usa')) return 'US';
-    if (hosts.contains('jp') || hosts.contains('japan')) return 'JP';
-    if (hosts.contains('fr') || hosts.contains('france')) return 'FR';
-    if (hosts.contains('uk') || hosts.contains('gb') || hosts.contains('united kingdom')) return 'GB';
-    if (hosts.contains('ru') || hosts.contains('russia')) return 'RU';
-    if (hosts.contains('nl') || hosts.contains('netherlands')) return 'NL';
-    if (hosts.contains('ca') || hosts.contains('canada')) return 'CA';
-    if (hosts.contains('au') || hosts.contains('australia')) return 'AU';
-    if (hosts.contains('br') || hosts.contains('brazil')) return 'BR';
-    if (hosts.contains('in') || hosts.contains('india')) return 'IN';
+    final h = host.toLowerCase();
+    if (h.contains('de') || h.contains('germany')) return 'DE';
+    if (h.contains('us') || h.contains('usa')) return 'US';
+    if (h.contains('jp') || h.contains('japan')) return 'JP';
+    if (h.contains('fr') || h.contains('france')) return 'FR';
+    if (h.contains('uk') || h.contains('gb')) return 'GB';
+    if (h.contains('ru') || h.contains('russia')) return 'RU';
+    if (h.contains('nl') || h.contains('netherlands')) return 'NL';
+    if (h.contains('ca') || h.contains('canada')) return 'CA';
+    if (h.contains('au') || h.contains('australia')) return 'AU';
+    if (h.contains('br') || h.contains('brazil')) return 'BR';
+    if (h.contains('in') || h.contains('india')) return 'IN';
     return 'US';
   }
 
@@ -190,7 +193,7 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
 
     for (String source in _serverSources) {
       try {
-        final response = await http.get(Uri.parse(source)).timeout(Duration(seconds: 10));
+        final response = await http.get(Uri.parse(source)).timeout(Duration(seconds: 12));
         if (response.statusCode == 200) {
           final lines = response.body.split('\n');
           for (String line in lines) {
@@ -207,7 +210,7 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
           }
         }
       } catch (e) {
-        print('Error fetching from $source: $e');
+        print('Error: $e');
       }
     }
 
@@ -216,15 +219,14 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
     }
 
     allConfigs.shuffle();
-    int score = 0;
-    for (var server in allConfigs) {
-      score = (score + 1) % 100;
-      server['score'] = 100 - score;
+    for (int i = 0; i < allConfigs.length; i++) {
+      allConfigs[i]['score'] = 100 - (i % 100);
+      allConfigs[i]['ping'] = 50 + (i % 200);
     }
 
     setState(() {
       _allServers = allConfigs;
-      _servers = allConfigs.length > 50 ? allConfigs.sublist(0, 50) : allConfigs;
+      _servers = allConfigs.length > 100 ? allConfigs.sublist(0, 100) : allConfigs;
       if (_servers.isNotEmpty) _selectedIndex = 0;
       _isLoadingServers = false;
       _sourceInfo = '${_servers.length} servers ready';
@@ -304,7 +306,6 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
     return [
       {'url': 'vless://b5e3e7e7-8f6a-4d4e-a4b2-1c8e9d0a5f6b@185.162.235.223:443?type=ws&path=/&encryption=none&security=tls#DE-1', 'protocol': 'vless', 'host': '185.162.235.223', 'port': 443, 'remark': 'Germany', 'country': 'DE', 'flag': '🇩🇪', 'config': 'vless://b5e3e7e7-8f6a-4d4e-a4b2-1c8e9d0a5f6b@185.162.235.223:443?type=ws&path=/&encryption=none&security=tls#DE-1', 'score': 85, 'ping': 120},
       {'url': 'vmess://eyJ2IjoiMiIsInBzIjoiVVMtMSIsImFkZCI6IjE0Mi4wLjEzNi4xMzciLCJwb3J0IjoiODAiLCJpZCI6ImZmZmZmZmZmLWZmZmYtZmZmZi1mZmZmLWZmZmZmZmZmZmZmZiIsImFpZCI6IjAiLCJzY3kiOiJhdXRvIiwibmV0Ijoid3MiLCJ0eXBlIjoibm9uZSIsImhvc3QiOiIiLCJwYXRoIjoiIiwidGxzIjoiIn0=', 'protocol': 'vmess', 'host': '142.0.136.137', 'port': 80, 'remark': 'USA', 'country': 'US', 'flag': '🇺🇸', 'config': 'vmess://eyJ2IjoiMiIsInBzIjoiVVMtMSIsImFkZCI6IjE0Mi4wLjEzNi4xMzciLCJwb3J0IjoiODAiLCJpZCI6ImZmZmZmZmZmLWZmZmYtZmZmZi1mZmZmLWZmZmZmZmZmZmZmZiIsImFpZCI6IjAiLCJzY3kiOiJhdXRvIiwibmV0Ijoid3MiLCJ0eXBlIjoibm9uZSIsImhvc3QiOiIiLCJwYXRoIjoiIiwidGxzIjoiIn0=', 'score': 90, 'ping': 80},
-      {'url': 'trojan://password@trojan.example.com:443?security=tls&sni=trojan.example.com#Trojan-1', 'protocol': 'trojan', 'host': 'trojan.example.com', 'port': 443, 'remark': 'Trojan US', 'country': 'US', 'flag': '🇺🇸', 'config': 'trojan://password@trojan.example.com:443?security=tls&sni=trojan.example.com#Trojan-1', 'score': 75, 'ping': 150},
     ];
   }
 
@@ -340,7 +341,7 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
         _statusText = 'Connection failed';
         _signalStrength = 0.1;
       });
-      _showSnackbar('Failed to connect');
+      _showSnackbar('Failed to connect: ${e.toString().substring(0, 30)}');
     }
   }
 
@@ -457,18 +458,7 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
                   },
                   activeColor: Color(0xFF2563EB),
                 ),
-                SwitchListTile(
-                  title: Text('Dark Mode'),
-                  subtitle: Text('Use dark theme'),
-                  value: _isDarkMode,
-                  onChanged: (value) {
-                    setStateModal(() => _isDarkMode = value);
-                    setState(() => _isDarkMode = value);
-                    _saveSettings();
-                  },
-                  activeColor: Color(0xFF2563EB),
-                ),
-                SizedBox(height: 10),
+                SizedBox(height: 20),
                 Text('Protocol: $_protocolText', style: TextStyle(color: Color(0xFF94A3B8))),
                 SizedBox(height: 20),
               ],
