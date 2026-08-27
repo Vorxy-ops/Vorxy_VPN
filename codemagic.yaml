@@ -3,7 +3,7 @@ workflows:
     name: Vorxy VPN
     max_build_duration: 60
     environment:
-      flutter: 3.41.0
+      flutter: 3.47.1
     scripts:
       - name: Clean build
         script: |
