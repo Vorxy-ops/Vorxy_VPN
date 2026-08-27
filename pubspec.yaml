@@ -1,23 +1,26 @@
 name: vorxy_vpn
-description: Vorxy VPN
+description: Vorxy VPN - Premium Free VPN
 publish_to: none
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.0.0 <4.0.0'
+  sdk: ">=3.4.0 <4.0.0"
 
 dependencies:
   flutter:
     sdk: flutter
-  http: ^1.2.0
-  shared_preferences: ^2.2.2
-  connectivity_plus: ^6.0.3
+  http: ^1.3.0
+  shared_preferences: ^2.5.3
+  connectivity_plus: ^6.1.3
+  path_provider: ^2.1.5
+  permission_handler: ^12.0.1
   openvpn_flutter: ^1.0.1
+  url_launcher: ^6.3.1
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^3.0.0
+  flutter_lints: ^5.0.0
 
 flutter:
   uses-material-design: true
