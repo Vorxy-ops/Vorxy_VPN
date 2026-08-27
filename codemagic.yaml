@@ -1,34 +1,19 @@
-name: vorxy_vpn
-description: Vorxy VPN - Premium Free VPN
-publish_to: none
-version: 1.0.0+1
-
-environment:
-  sdk: ">=3.4.0 <4.0.0"
-
-dependencies:
-  flutter:
-    sdk: flutter
-  
-  http: ^1.3.0
-  shared_preferences: ^2.5.3
-  connectivity_plus: ^6.1.3
-  path_provider: ^2.1.5
-  permission_handler: ^11.3.1
-  flutter_native_splash: ^2.4.5
-  flutter_launcher_icons: ^0.14.3
-  url_launcher: ^6.3.1
-  
-  openvpn_flutter: ^1.0.1
-  flutter_vpn: ^1.0.0
-
-dev_dependencies:
-  flutter_test:
-    sdk: flutter
-  flutter_lints: ^5.0.0
-
-flutter:
-  uses-material-design: true
-  
-  assets:
-    - assets/
+workflows:
+  vorxy-vpn:
+    name: Vorxy VPN
+    max_build_duration: 60
+    environment:
+      flutter: 3.47.1
+    scripts:
+      - name: Clean build
+        script: |
+          rm -rf build
+          rm -rf .dart_tool
+          rm -rf android/.gradle
+          rm -rf android/app/build
+      - name: Install dependencies
+        script: flutter pub get
+      - name: Build APK
+        script: flutter build apk --release
+    artifacts:
+      - build/app/outputs/flutter-apk/app-release.apk
