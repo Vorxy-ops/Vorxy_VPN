@@ -2,10 +2,10 @@ import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:openvpn_flutter/openvpn_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:flutter_v2ray/flutter_v2ray.dart';
 
 void main() => runApp(VorxyApp());
 
@@ -22,16 +22,6 @@ class VorxyApp extends StatelessWidget {
           elevation: 0,
           centerTitle: true,
         ),
-        cardTheme: const CardThemeData(
-          color: Color(0xFF1E293B),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(Radius.circular(16)),
-          ),
-        ),
-        floatingActionButtonTheme: const FloatingActionButtonThemeData(
-          backgroundColor: Color(0xFF2563EB),
-          foregroundColor: Colors.white,
-        ),
       ),
       home: const VorxyHome(),
       debugShowCheckedModeBanner: false,
@@ -41,24 +31,25 @@ class VorxyApp extends StatelessWidget {
 
 class VorxyHome extends StatefulWidget {
   const VorxyHome({super.key});
-
   @override
   _VorxyHomeState createState() => _VorxyHomeState();
 }
 
 class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
-  final OpenVPN _openVpn = OpenVPN();
+  final FlutterV2ray _v2ray = FlutterV2ray(
+    onStatusChanged: (status) {
+      print('V2Ray status: ${status.state}');
+    },
+  );
 
   bool _isConnected = false;
   bool _isLoading = false;
   bool _isLoadingServers = false;
-  bool _isKillSwitch = false;
-  bool _isAutoConnect = false;
   String _statusText = 'Disconnected';
   String _selectedServer = 'Auto';
   String _connectionTime = '00:00:00';
   String _serverLocation = '';
-  String _protocolText = 'OpenVPN';
+  String _protocolText = 'V2Ray';
   int _dataReceived = 0;
   int _dataSent = 0;
   double _signalStrength = 0.0;
@@ -69,92 +60,17 @@ class _VorxyHomeState extends State<VorxyHome> with WidgetsBindingObserver {
   int _seconds = 0;
   String _sourceInfo = 'Loading...';
 
-  // 1. ИСТОЧНИКИ ДЛЯ РФ
+  // Источники рабочих V2Ray-конфигов для РФ (VLESS+Reality, VMess, Shadowsocks)
   final List<String> _serverSources = [
-    'https://raw.githubusercontent.com/solovyov-jenya2004/all_subs/main/final_sorted/',
-    'https://raw.githubusercontent.com/wlunlocker/vpn-configs/main/whitelist_all.txt',
-  ];
-
-  // 2. РЕЗЕРВНЫЕ КОНФИГИ (OpenVPN с обфускацией)
-  final List<Map<String, dynamic>> _fallbackConfigs = [
-    {
-      'name': 'DE Fallback',
-      'flag': '🇩🇪',
-      'host': '185.162.235.223',
-      'config': '''client
-dev tun
-proto tcp
-remote 185.162.235.223 443
-resolv-retry infinite
-nobind
-persist-key
-persist-tun
-remote-cert-tls server
-cipher AES-256-CBC
-verb 3
-auth SHA256
-tls-crypt
-<key>
------BEGIN OpenVPN Static key V1-----
-e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
-e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
-e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
-e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
-e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
-e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
-e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
-e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
-e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
-e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
-e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
-e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
-e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
-e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
-e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
-e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
------END OpenVPN Static key V1-----
-</key>
-''',
-    },
-    {
-      'name': 'US Fallback',
-      'flag': '🇺🇸',
-      'host': '142.0.136.137',
-      'config': '''client
-dev tun
-proto tcp
-remote 142.0.136.137 80
-resolv-retry infinite
-nobind
-persist-key
-persist-tun
-remote-cert-tls server
-cipher AES-256-CBC
-verb 3
-auth SHA256
-tls-crypt
-<key>
------BEGIN OpenVPN Static key V1-----
-e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
-e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
-e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
-e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
-e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
-e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
-e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
-e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
-e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
-e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
-e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
-e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
-e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
-e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
-e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
-e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
------END OpenVPN Static key V1-----
-</key>
-''',
-    },
+    'https://raw.githubusercontent.com/nikita29a/FreeProxyList/refs/heads/main/mirror/1.txt',
+    'https://raw.githubusercontent.com/nikita29a/FreeProxyList/refs/heads/main/mirror/2.txt',
+    'https://raw.githubusercontent.com/nikita29a/FreeProxyList/refs/heads/main/mirror/3.txt',
+    'https://raw.githubusercontent.com/nikita29a/FreeProxyList/refs/heads/main/mirror/4.txt',
+    'https://raw.githubusercontent.com/nikita29a/FreeProxyList/refs/heads/main/mirror/5.txt',
+    'https://raw.githubusercontent.com/Hidashimora/free-vpn-anti-rkn/main/configs/1.1.txt',
+    'https://raw.githubusercontent.com/Hidashimora/free-vpn-anti-rkn/main/configs/2.1.txt',
+    'https://raw.githubusercontent.com/Hidashimora/free-vpn-anti-rkn/main/configs/3.1.txt',
+    'https://raw.githubusercontent.com/Hidashimora/free-vpn-anti-rkn/main/configs/4.1.txt',
   ];
 
   final Map<String, String> _countryFlags = {
@@ -178,7 +94,6 @@ e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _initVpn();
-    _loadSettings();
     _fetchAllServers();
     _checkConnectivity();
     _requestPermissions();
@@ -193,7 +108,7 @@ e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (_isAutoConnect && state == AppLifecycleState.resumed && !_isConnected) {
+    if (state == AppLifecycleState.resumed && !_isConnected) {
       _autoConnect();
     }
   }
@@ -201,29 +116,15 @@ e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
   Future<void> _requestPermissions() async {
     try {
       await Permission.notification.request();
+      await Permission.foregroundService.request();
     } catch (e) {}
-  }
-
-  Future<void> _loadSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _isKillSwitch = prefs.getBool('killSwitch') ?? false;
-      _isAutoConnect = prefs.getBool('autoConnect') ?? false;
-    });
-  }
-
-  Future<void> _saveSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('killSwitch', _isKillSwitch);
-    await prefs.setBool('autoConnect', _isAutoConnect);
   }
 
   Future<void> _initVpn() async {
     try {
-      await _openVpn.initialize(
-        groupIdentifier: 'group.com.vorxy.vpn',
-        providerBundleIdentifier: 'com.vorxy.app.VPNExtension',
-        localizedDescription: 'Vorxy VPN',
+      await _v2ray.initializeV2Ray(
+        notificationIconResourceType: 'mipmap',
+        notificationIconResourceName: 'ic_launcher',
       );
     } catch (e) {}
   }
@@ -233,10 +134,6 @@ e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
     connectivity.onConnectivityChanged.listen((result) {
       if (result.contains(ConnectivityResult.none)) {
         _showSnackbar('No internet connection');
-        if (_isKillSwitch && _isConnected) {
-          _disconnectVpn();
-          _showSnackbar('Kill Switch activated');
-        }
       }
     });
   }
@@ -247,22 +144,6 @@ e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
     return _countryFlags[upper] ?? '🌍';
   }
 
-  String _getCountryFromHost(String host) {
-    final h = host.toLowerCase();
-    if (h.contains('de') || h.contains('germany')) return 'DE';
-    if (h.contains('us') || h.contains('usa') || h.contains('united states')) return 'US';
-    if (h.contains('jp') || h.contains('japan')) return 'JP';
-    if (h.contains('fr') || h.contains('france')) return 'FR';
-    if (h.contains('uk') || h.contains('gb') || h.contains('united kingdom')) return 'GB';
-    if (h.contains('ru') || h.contains('russia')) return 'RU';
-    if (h.contains('nl') || h.contains('netherlands')) return 'NL';
-    if (h.contains('ca') || h.contains('canada')) return 'CA';
-    if (h.contains('au') || h.contains('australia')) return 'AU';
-    if (h.contains('br') || h.contains('brazil')) return 'BR';
-    if (h.contains('in') || h.contains('india')) return 'IN';
-    return 'US';
-  }
-
   Future<void> _fetchAllServers() async {
     setState(() {
       _isLoadingServers = true;
@@ -271,33 +152,35 @@ e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
 
     List<Map<String, dynamic>> allConfigs = [];
 
-    // 3. ПАРСИМ ИСТОЧНИКИ
     for (String source in _serverSources) {
       try {
-        final response = await http.get(Uri.parse(source)).timeout(const Duration(seconds: 15));
+        final response = await http.get(Uri.parse(source)).timeout(
+          const Duration(seconds: 15),
+        );
+
         if (response.statusCode == 200) {
           final lines = response.body.split('\n');
           for (String line in lines) {
             line = line.trim();
             if (line.isEmpty) continue;
-            if (line.startsWith('http') && (line.endsWith('.ovpn') || line.contains('ovpn'))) {
+
+            if (line.startsWith('vless://') ||
+                line.startsWith('vmess://') ||
+                line.startsWith('trojan://') ||
+                line.startsWith('ss://') ||
+                line.startsWith('hy2://')) {
               try {
-                final configResponse = await http.get(Uri.parse(line)).timeout(const Duration(seconds: 10));
-                if (configResponse.statusCode == 200) {
-                  final config = configResponse.body;
-                  if (config.contains('client') && config.contains('dev tun')) {
-                    final host = line.split('/').last.replaceAll('.ovpn', '');
-                    final country = _getCountryFromHost(host);
-                    allConfigs.add({
-                      'host': host,
-                      'country': country,
-                      'config': config,
-                      'remark': host,
-                      'flag': _getFlag(country),
-                      'score': 100,
-                      'ping': 50 + (allConfigs.length % 200),
-                    });
-                  }
+                final parsed = FlutterV2ray.parseFromURL(line);
+                if (parsed.host.isNotEmpty) {
+                  allConfigs.add({
+                    'host': parsed.host,
+                    'country': 'US',
+                    'config': line,
+                    'remark': parsed.remark ?? 'Server',
+                    'flag': '🌍',
+                    'score': 80,
+                    'ping': 50 + (allConfigs.length % 200),
+                  });
                 }
               } catch (_) {}
             }
@@ -306,32 +189,39 @@ e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
       } catch (e) {}
     }
 
-    // 4. РЕЗЕРВНЫЕ КОНФИГИ
+    // Резервные серверы, если ничего не загрузилось
     if (allConfigs.isEmpty) {
-      allConfigs = _fallbackConfigs.map((fb) => {
-        'host': fb['host'],
-        'country': _getCountryFromHost(fb['host']),
-        'config': fb['config'],
-        'remark': fb['name'],
-        'flag': fb['flag'],
-        'score': 80,
-        'ping': 100 + (allConfigs.length % 200),
-      }).toList();
+      allConfigs = [
+        {
+          'host': '185.162.235.223',
+          'country': 'DE',
+          'config': 'vless://b5e3e7e7-8f6a-4d4e-a4b2-1c8e9d0a5f6b@185.162.235.223:443?type=ws&path=/&encryption=none&security=tls#DE-1',
+          'remark': 'Germany Fallback',
+          'flag': '🇩🇪',
+          'score': 70,
+          'ping': 100,
+        },
+        {
+          'host': '142.0.136.137',
+          'country': 'US',
+          'config': 'vmess://eyJ2IjoiMiIsInBzIjoiVVMtMSIsImFkZCI6IjE0Mi4wLjEzNi4xMzciLCJwb3J0IjoiODAiLCJpZCI6ImZmZmZmZmZmLWZmZmYtZmZmZi1mZmZmLWZmZmZmZmZmZmZmZiIsImFpZCI6IjAiLCJzY3kiOiJhdXRvIiwibmV0Ijoid3MiLCJ0eXBlIjoibm9uZSIsImhvc3QiOiIiLCJwYXRoIjoiIiwidGxzIjoiIn0=',
+          'remark': 'USA Fallback',
+          'flag': '🇺🇸',
+          'score': 70,
+          'ping': 80,
+        },
+      ];
     }
 
     allConfigs.shuffle();
 
     setState(() {
       _allServers = allConfigs;
-      _servers = allConfigs.length > 50 ? allConfigs.sublist(0, 50) : allConfigs;
+      _servers = allConfigs.length > 100 ? allConfigs.sublist(0, 100) : allConfigs;
       if (_servers.isNotEmpty) _selectedIndex = 0;
       _isLoadingServers = false;
       _sourceInfo = '${_servers.length} servers ready';
     });
-
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('servers', jsonEncode(_allServers));
-    _showSnackbar('${_servers.length} servers loaded');
   }
 
   Future<void> _connectVpn(int index) async {
@@ -350,12 +240,21 @@ e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
       _isLoading = true;
       _selectedServer = server['remark'] ?? server['host'];
       _serverLocation = server['country'] ?? '';
-      _protocolText = 'OpenVPN';
+      _protocolText = 'V2Ray';
       _statusText = 'Connecting...';
     });
 
     try {
-      await _openVpn.connect(server['config'].toString(), server['remark']);
+      final parsed = FlutterV2ray.parseFromURL(server['config']);
+
+      if (await _v2ray.requestPermission()) {
+        await _v2ray.startV2Ray(
+          remark: parsed.remark ?? 'Vorxy',
+          config: parsed.getFullConfiguration(),
+          proxyOnly: false,
+        );
+      }
+
       setState(() {
         _isConnected = true;
         _isLoading = false;
@@ -376,7 +275,7 @@ e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
   }
 
   Future<void> _autoConnect() async {
-    if (_servers.isNotEmpty) {
+    if (_servers.isNotEmpty && _selectedIndex < _servers.length) {
       await _connectVpn(_selectedIndex);
     }
   }
@@ -406,17 +305,13 @@ e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
     return '${(bytes / 1073741824).toStringAsFixed(2)} GB';
   }
 
-  String _formatSpeed(int bytes, int seconds) {
-    if (seconds == 0) return '0 B/s';
-    final speed = bytes ~/ seconds;
-    if (speed < 1024) return '$speed B/s';
-    if (speed < 1048576) return '${(speed / 1024).toStringAsFixed(1)} KB/s';
-    return '${(speed / 1048576).toStringAsFixed(1)} MB/s';
-  }
-
   Future<void> _disconnectVpn() async {
-    _openVpn.disconnect();
+    try {
+      await _v2ray.stopV2Ray();
+    } catch (_) {}
+
     _timer?.cancel();
+
     setState(() {
       _isConnected = false;
       _statusText = 'Disconnected';
@@ -441,72 +336,9 @@ e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
     await _fetchAllServers();
   }
 
-  void _showSettings() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF1E293B),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => StatefulBuilder(
-        builder: (context, setStateModal) {
-          return Container(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF64748B),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                const Text('Settings', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 20),
-                SwitchListTile(
-                  title: const Text('Kill Switch'),
-                  subtitle: const Text('Block internet if VPN disconnects'),
-                  value: _isKillSwitch,
-                  onChanged: (value) {
-                    setStateModal(() => _isKillSwitch = value);
-                    setState(() => _isKillSwitch = value);
-                    _saveSettings();
-                  },
-                  activeColor: const Color(0xFF2563EB),
-                ),
-                SwitchListTile(
-                  title: const Text('Auto Connect'),
-                  subtitle: const Text('Auto-connect on app start'),
-                  value: _isAutoConnect,
-                  onChanged: (value) {
-                    setStateModal(() => _isAutoConnect = value);
-                    setState(() => _isAutoConnect = value);
-                    _saveSettings();
-                  },
-                  activeColor: const Color(0xFF2563EB),
-                ),
-                const SizedBox(height: 20),
-                Text('Protocol: $_protocolText', style: const TextStyle(color: Color(0xFF94A3B8))),
-                const SizedBox(height: 20),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      floatingActionButton: FloatingActionButton(
-        onPressed: _showSettings,
-        child: const Icon(Icons.settings),
-        backgroundColor: const Color(0xFF2563EB),
-      ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
@@ -650,15 +482,6 @@ e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
                         Text(_formatBytes(_dataSent), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
                       ],
                     ),
-                    Column(
-                      children: [
-                        const Text('Speed', style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
-                        Text(
-                          _isConnected ? _formatSpeed(_dataReceived + _dataSent, _seconds == 0 ? 1 : _seconds) : '0 B/s',
-                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                        ),
-                      ],
-                    ),
                   ],
                 ),
               ),
@@ -686,16 +509,6 @@ e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      if (_isKillSwitch)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF4A1A1A),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Text('Kill', style: TextStyle(fontSize: 8, color: Color(0xFFEF4444))),
-                        ),
                     ],
                   ),
                 ],
@@ -726,9 +539,7 @@ e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
                             itemBuilder: (ctx, idx) {
                               final server = _servers[idx];
                               final isSelected = idx == _selectedIndex;
-                              final ping = server['ping'] ?? 100;
                               final hasConfig = server['config'] != null && server['config'].toString().isNotEmpty;
-                              final score = server['score'] ?? 0;
 
                               return GestureDetector(
                                 onTap: () {
@@ -759,12 +570,25 @@ e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
                                         child: Column(
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
-                                            Text(
-                                              server['remark'] ?? 'Server',
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.w500,
-                                                color: hasConfig ? Colors.white : const Color(0xFF64748B),
-                                              ),
+                                            Row(
+                                              children: [
+                                                Text(
+                                                  server['remark'] ?? 'Server',
+                                                  style: TextStyle(
+                                                    fontWeight: FontWeight.w500,
+                                                    color: hasConfig ? Colors.white : const Color(0xFF64748B),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.purple.withOpacity(0.2),
+                                                    borderRadius: BorderRadius.circular(4),
+                                                  ),
+                                                  child: const Text('V2Ray', style: TextStyle(fontSize: 8, color: Colors.purpleAccent)),
+                                                ),
+                                              ],
                                             ),
                                             Text(
                                               server['host'] ?? '',
@@ -786,38 +610,16 @@ e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5
                                           child: const Text('No config', style: TextStyle(fontSize: 9, color: Color(0xFFEF4444))),
                                         ),
                                       if (hasConfig)
-                                        Row(
-                                          children: [
-                                            Icon(
-                                              Icons.signal_cellular_alt,
-                                              size: 14,
-                                              color: ping < 150
-                                                  ? const Color(0xFF22C55E)
-                                                  : ping < 300
-                                                      ? const Color(0xFFF59E0B)
-                                                      : const Color(0xFFEF4444),
-                                            ),
-                                            const SizedBox(width: 4),
-                                            Text(
-                                              '${ping}ms',
-                                              style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                                              decoration: BoxDecoration(
-                                                color: score > 80 ? Colors.green.withOpacity(0.2) : Colors.grey.withOpacity(0.2),
-                                                borderRadius: BorderRadius.circular(4),
-                                              ),
-                                              child: Text(
-                                                '$score%',
-                                                style: TextStyle(
-                                                  fontSize: 8,
-                                                  color: score > 80 ? Colors.green : Colors.grey,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: isSelected ? const Color(0xFF2563EB) : const Color(0xFF1E293B),
+                                            borderRadius: BorderRadius.circular(10),
+                                          ),
+                                          child: Text(
+                                            '${server['score'] ?? 0}%',
+                                            style: const TextStyle(fontSize: 10, color: Colors.white),
+                                          ),
                                         ),
                                     ],
                                   ),
